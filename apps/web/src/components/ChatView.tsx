@@ -195,6 +195,7 @@ import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerAttachment,
+  type ComposerImageAttachment,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   type DraftId,
