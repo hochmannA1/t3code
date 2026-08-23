@@ -248,19 +248,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       createStagePatchedDependencies(
         {
           "@expo/metro-config@56.0.13": "patches/@expo%2Fmetro-config@56.0.13.patch",
-          "@ff-labs/fff-node@0.9.4": "patches/@ff-labs__fff-node@0.9.4.patch",
+          "@ff-labs/fff-node@0.10.5": "patches/@ff-labs__fff-node@0.10.5.patch",
           "@pierre/diffs@1.1.20": "patches/@pierre%2Fdiffs@1.1.20.patch",
           "alchemy@2.0.0-beta.49": "patches/alchemy@2.0.0-beta.49.patch",
           "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
         },
         {
-          "@ff-labs/fff-node": "0.9.4",
+          "@ff-labs/fff-node": "0.10.5",
           "@pierre/diffs": "1.1.20",
           effect: "4.0.0-beta.73",
         },
       ),
       {
-        "@ff-labs/fff-node@0.9.4": "patches/@ff-labs__fff-node@0.9.4.patch",
+        "@ff-labs/fff-node@0.10.5": "patches/@ff-labs__fff-node@0.10.5.patch",
         "@pierre/diffs@1.1.20": "patches/@pierre%2Fdiffs@1.1.20.patch",
         "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
       },
@@ -564,7 +564,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           primaryProbe.args[4],
           path.join(
             fixture.packagedAppDir,
-            "resources/server.asar/node_modules/@ff-labs/fff-node/dist/src/index.js",
+            "resources/server.asar/node_modules/@ff-labs/fff-node/dist/index.js",
           ),
         );
         assert.equal(primaryProbe.options.cwd, fixture.packagedAppDir);

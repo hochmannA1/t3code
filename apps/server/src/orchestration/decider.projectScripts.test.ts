@@ -315,6 +315,7 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
             { id: "fastMode", value: true },
           ]),
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          responseProfile: "work",
           runtimeMode: "approval-required",
           createdAt: now,
         },
@@ -339,6 +340,7 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
           { id: "fastMode", value: true },
         ]),
         runtimeMode: "approval-required",
+        responseProfile: "work",
       });
     }),
   );

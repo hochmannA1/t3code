@@ -15,7 +15,7 @@ import {
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
-import { newDraftId, newThreadId } from "../lib/utils";
+import { newDraftId, newProjectId, newThreadId } from "../lib/utils";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -30,6 +30,8 @@ import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import { createWorkModelSelection, resolveWorkComplexity } from "../workExperience";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
@@ -60,14 +62,16 @@ export function useNewThreadHandler() {
   const primaryServerSettings = useAtomValue(primaryServerSettingsAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const router = useRouter();
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const getCurrentRouteTarget = useCallback(() => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
     return resolveThreadRouteTarget(currentRouteParams);
   }, [router]);
 
   return useCallback(
-    (
-      projectRef: ScopedProjectRef,
+    async (
+      projectRef: ScopedProjectRef | null,
       options?: {
         branch?: string | null;
         worktreePath?: string | null;
@@ -98,6 +102,52 @@ export function useNewThreadHandler() {
         setLogicalProjectDraftThreadId,
         setModelSelection,
       } = useComposerDraftStore.getState();
+
+      // Work starts without asking the user to understand projects. The draft
+      // carries only an environment until its first message allocates a real
+      // standalone project on that environment.
+      if (appExperience === "work" && projectRef === null) {
+        if (primaryEnvironmentId === null) {
+          return null;
+        }
+        const draftId = newDraftId();
+        const threadId = newThreadId();
+        const placeholderProjectRef = scopeProjectRef(primaryEnvironmentId, newProjectId());
+        setLogicalProjectDraftThreadId(
+          `standalone-draft:${draftId}`,
+          placeholderProjectRef,
+          draftId,
+          {
+            threadId,
+            createdAt: new Date().toISOString(),
+            branch: null,
+            worktreePath: null,
+            envMode: "local",
+            startFromOrigin: false,
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+          },
+        );
+        applyStickyState(draftId);
+        const stickyDraft = getComposerDraft(draftId);
+        const stickySelection = stickyDraft?.activeProvider
+          ? stickyDraft.modelSelectionByProvider[stickyDraft.activeProvider]
+          : undefined;
+        if (resolveWorkComplexity(stickySelection) === null) {
+          setModelSelection(draftId, createWorkModelSelection("normal"), {
+            replaceOptions: true,
+          });
+        }
+        await router.navigate({
+          to: "/draft/$draftId",
+          params: { draftId },
+          replace: options?.replace ?? false,
+        });
+        return { draftId, threadId };
+      }
+
+      if (projectRef === null) {
+        return null;
+      }
       const currentRouteTarget = getCurrentRouteTarget();
       // A new thread carries the user's *working mode* from the thread being
       // viewed: model (including options like reasoning effort and context
@@ -430,7 +480,15 @@ export function useNewThreadHandler() {
         return { draftId, threadId };
       })();
     },
-    [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
+    [
+      appExperience,
+      getCurrentRouteTarget,
+      primaryEnvironmentId,
+      primaryServerSettings,
+      projectGroupingSettings,
+      projects,
+      router,
+    ],
   );
 }
 

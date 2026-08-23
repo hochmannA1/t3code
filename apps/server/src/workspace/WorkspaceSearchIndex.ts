@@ -8,15 +8,19 @@ import {
   type MixedSearchResult,
   type Result,
   type SearchResult,
+  type WatchEvent,
 } from "@ff-labs/fff-node";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as LayerMap from "effect/LayerMap";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import type {
   ProjectEntry,
+  ProjectEntryChangesEvent,
   ProjectEntryKind,
   ProjectListEntriesResult,
   ProjectSearchContentsInput,
@@ -86,6 +90,19 @@ export class WorkspaceSearchIndexRefreshFailed extends Schema.TaggedErrorClass<W
   }
 }
 
+export class WorkspaceSearchIndexWatchFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexWatchFailed>()(
+  "WorkspaceSearchIndexWatchFailed",
+  {
+    cwd: Schema.String,
+    reason: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Failed to watch workspace search index for '${this.cwd}'.`;
+  }
+}
+
 export class WorkspaceSearchIndexDestroyFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexDestroyFailed>()(
   "WorkspaceSearchIndexDestroyFailed",
   {
@@ -102,7 +119,8 @@ export type WorkspaceSearchIndexError =
   | WorkspaceSearchIndexCreateFailed
   | WorkspaceSearchIndexScanTimedOut
   | WorkspaceSearchIndexSearchFailed
-  | WorkspaceSearchIndexRefreshFailed;
+  | WorkspaceSearchIndexRefreshFailed
+  | WorkspaceSearchIndexWatchFailed;
 
 export class WorkspaceSearchIndex extends Context.Service<
   WorkspaceSearchIndex,
@@ -121,6 +139,7 @@ export class WorkspaceSearchIndex extends Context.Service<
       void,
       WorkspaceSearchIndexRefreshFailed | WorkspaceSearchIndexScanTimedOut
     >;
+    readonly changes: Stream.Stream<ProjectEntryChangesEvent, WorkspaceSearchIndexWatchFailed>;
   }
 >()("t3/workspace/WorkspaceSearchIndex") {}
 
@@ -431,6 +450,37 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     );
   });
 
+  const changes: WorkspaceSearchIndex["Service"]["changes"] = Stream.callback((queue) =>
+    Effect.acquireRelease(
+      Effect.gen(function* () {
+        let revision = 0;
+        const watch = yield* Effect.try({
+          try: () =>
+            finder.watch((events: WatchEvent[]) => {
+              if (!events.some((event) => event.kind !== "modified")) return;
+              revision += 1;
+              Queue.offerUnsafe(queue, { revision });
+            }),
+          catch: (cause) =>
+            new WorkspaceSearchIndexWatchFailed({
+              cwd,
+              reason: "FileFinder.watch threw unexpectedly.",
+              cause,
+            }),
+        });
+        if (!watch.ok) {
+          return yield* new WorkspaceSearchIndexWatchFailed({
+            cwd,
+            reason: watch.error,
+          });
+        }
+        Queue.offerUnsafe(queue, { revision });
+        return watch.value;
+      }),
+      (unsubscribe) => Effect.sync(unsubscribe),
+    ),
+  );
+
   const list: WorkspaceSearchIndex["Service"]["list"] = Effect.fn("WorkspaceSearchIndex.list")(
     function* () {
       const result = yield* runSearch("", WORKSPACE_INDEX_PAGE_SIZE, "mixedSearch", () =>
@@ -521,7 +571,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     };
   });
 
-  return WorkspaceSearchIndex.of({ list, refresh, search, searchContents });
+  return WorkspaceSearchIndex.of({ changes, list, refresh, search, searchContents });
 });
 
 export const WORKSPACE_SEARCH_INDEX_VARIANTS = ["paths", "content"] as const;

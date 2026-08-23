@@ -18,6 +18,7 @@ import {
 import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { useUiStateStore } from "~/uiStateStore";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -40,6 +41,7 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const appExperience = useUiStateStore((store) => store.appExperience);
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
@@ -52,22 +54,34 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    if (
+      !bootstrapped ||
+      (appExperience === "code" && mostRecentProject === null) ||
+      startingRef.current
+    ) {
       return;
     }
     startingRef.current = true;
-    void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
-      replace: true,
-    }).catch(() => {
-      startingRef.current = false;
-      setStartState((state) => ({ ...state, failed: true }));
-    });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+    const projectRef =
+      appExperience === "work" || mostRecentProject === null
+        ? null
+        : scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
+    void handleNewThread(projectRef, { replace: true })
+      .then((result) => {
+        if (result !== null) return;
+        startingRef.current = false;
+        setStartState((state) => ({ ...state, failed: true }));
+      })
+      .catch(() => {
+        startingRef.current = false;
+        setStartState((state) => ({ ...state, failed: true }));
+      });
+  }, [appExperience, bootstrapped, handleNewThread, mostRecentProject, startState.retryRequest]);
 
   if (!bootstrapped) {
     return null;
   }
-  if (mostRecentProject !== null) {
+  if (appExperience === "work" || mostRecentProject !== null) {
     return startState.failed ? (
       <DraftStartError
         onRetry={() => {

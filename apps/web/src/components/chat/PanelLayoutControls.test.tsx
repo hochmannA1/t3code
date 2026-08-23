@@ -25,4 +25,24 @@ describe("PanelLayoutControls", () => {
       2,
     );
   });
+
+  it("can hide the terminal control without hiding the right-panel control", () => {
+    const markup = renderToStaticMarkup(
+      <PanelLayoutControls
+        showTerminalControl={false}
+        terminalAvailable
+        terminalOpen={false}
+        terminalShortcutLabel={null}
+        rightPanelAvailable
+        rightPanelOpen={false}
+        rightPanelShortcutLabel={null}
+        liveAgentCount={0}
+        onToggleTerminal={() => {}}
+        onToggleRightPanel={() => {}}
+      />,
+    );
+
+    expect(markup).not.toContain('aria-label="Toggle terminal drawer"');
+    expect(markup).toContain('aria-label="Toggle right panel"');
+  });
 });

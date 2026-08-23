@@ -160,6 +160,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
+import { WorkProjectDialog } from "./work/WorkProjectDialog";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import {
@@ -402,9 +403,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     [],
   );
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
+  const openAddLocalProject = useCallback(() => dispatch({ _tag: "OpenAddLocalProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  const [workProjectDialogOpen, setWorkProjectDialogOpen] = useState(false);
+  const openWorkProjectDialog = useCallback(() => setWorkProjectDialogOpen(true), []);
   const { theme, themeHalves, resolvedTheme } = useTheme();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
   const routeTarget = useParams({
@@ -476,12 +481,25 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
         } else if (detail.open === "add-project") {
-          openAddProject();
+          if (appExperience === "work") {
+            openWorkProjectDialog();
+          } else {
+            openAddProject();
+          }
+        } else if (detail.open === "add-local-project") {
+          openAddLocalProject();
         } else {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [
+      appExperience,
+      openAddLocalProject,
+      openAddProject,
+      openNewThreadIn,
+      openWorkProjectDialog,
+      setOpen,
+    ],
   );
 
   return (
@@ -504,8 +522,14 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen={setOpen}
           openOverlayMode={toggleMode}
           clearOpenIntent={clearOpenIntent}
+          onOpenWorkProject={openWorkProjectDialog}
         />
       </CommandDialog>
+      <WorkProjectDialog
+        open={workProjectDialogOpen}
+        onOpenChange={setWorkProjectDialogOpen}
+        onChooseFolder={openAddLocalProject}
+      />
     </ComposerHandleContext>
   );
 }
@@ -516,6 +540,7 @@ function CommandPaletteDialog(props: {
   readonly setOpen: (open: boolean) => void;
   readonly openOverlayMode: (mode: SearchOverlayMode) => void;
   readonly clearOpenIntent: () => void;
+  readonly onOpenWorkProject: () => void;
 }) {
   const composerHandleRef = useComposerHandleContext();
 
@@ -550,6 +575,7 @@ function CommandPaletteDialog(props: {
           setOpen={props.setOpen}
           openOverlayMode={props.openOverlayMode}
           clearOpenIntent={props.clearOpenIntent}
+          onOpenWorkProject={props.onOpenWorkProject}
         />
       )}
     </CommandDialogPopup>
@@ -561,9 +587,10 @@ function OpenCommandPaletteDialog(props: {
   readonly setOpen: (open: boolean) => void;
   readonly openOverlayMode: (mode: SearchOverlayMode) => void;
   readonly clearOpenIntent: () => void;
+  readonly onOpenWorkProject: () => void;
 }) {
   const navigate = useNavigate();
-  const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
+  const { clearOpenIntent, onOpenWorkProject, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
@@ -588,6 +615,7 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
+  const appExperience = useUiStateStore((store) => store.appExperience);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -1408,6 +1436,11 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = useCallback(() => {
+    if (appExperience === "work") {
+      setOpen(false);
+      onOpenWorkProject();
+      return;
+    }
     if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
       pushPaletteView({
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
@@ -1432,8 +1465,11 @@ function OpenCommandPaletteDialog(props: {
   }, [
     addProjectEnvironmentGroups,
     addProjectEnvironmentOptions.length,
+    appExperience,
     defaultAddProjectEnvironmentId,
+    onOpenWorkProject,
     pushPaletteView,
+    setOpen,
     startAddProjectSourceSelection,
   ]);
 
@@ -1446,7 +1482,26 @@ function OpenCommandPaletteDialog(props: {
   }, [clearOpenIntent, openAddProjectFlow, openIntent]);
 
   useLayoutEffect(() => {
-    if (openIntent?.kind !== "new-thread-in" || projectThreadItems.length === 0) {
+    if (openIntent?.kind !== "add-local-project") {
+      return;
+    }
+    clearOpenIntent();
+    if (defaultAddProjectEnvironmentId === null) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Unable to browse folders",
+          description: "No environment is available.",
+        }),
+      );
+      setOpen(false);
+      return;
+    }
+    void startAddProjectBrowse(defaultAddProjectEnvironmentId);
+  }, [clearOpenIntent, defaultAddProjectEnvironmentId, openIntent, setOpen, startAddProjectBrowse]);
+
+  useLayoutEffect(() => {
+    if (openIntent?.kind !== "new-thread-in") {
       return;
     }
     clearOpenIntent();
@@ -1454,6 +1509,15 @@ function OpenCommandPaletteDialog(props: {
     setAddProjectCloneFlow(null);
     setViewStack([]);
     setQuery("");
+    if (appExperience === "work") {
+      setOpen(false);
+      void handleNewThread(null);
+      return;
+    }
+    if (projectThreadItems.length === 0) {
+      setOpen(false);
+      return;
+    }
     const currentPrefix =
       currentProjectEnvironmentId && currentProjectId
         ? `new-thread-in:${currentProjectEnvironmentId}:${currentProjectId}`
@@ -1475,18 +1539,33 @@ function OpenCommandPaletteDialog(props: {
       ],
     });
   }, [
+    appExperience,
     clearOpenIntent,
     browseNavigation,
     currentProjectEnvironmentId,
     currentProjectId,
+    handleNewThread,
     openIntent,
     projectThreadItems,
     pushPaletteView,
+    setOpen,
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0) {
+  if (appExperience === "work") {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-thread",
+      searchTerms: ["new task", "new chat", "new thread", "create"],
+      title: "New task",
+      icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.new",
+      run: async () => {
+        await handleNewThread(null);
+      },
+    });
+  } else if (projects.length > 0) {
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
@@ -1554,25 +1633,28 @@ function OpenCommandPaletteDialog(props: {
   actionItems.push({
     kind: "action",
     value: "action:add-project",
-    searchTerms: [
-      "add project",
-      "folder",
-      "directory",
-      "browse",
-      "clone",
-      "remote",
-      "repository",
-      "repo",
-      "git",
-      "github",
-      "gitlab",
-      "bitbucket",
-      "azure",
-      "devops",
-      "url",
-      "environment",
-    ],
-    title: "Add project",
+    searchTerms:
+      appExperience === "work"
+        ? ["create project", "project", "folder", "directory"]
+        : [
+            "add project",
+            "folder",
+            "directory",
+            "browse",
+            "clone",
+            "remote",
+            "repository",
+            "repo",
+            "git",
+            "github",
+            "gitlab",
+            "bitbucket",
+            "azure",
+            "devops",
+            "url",
+            "environment",
+          ],
+    title: appExperience === "work" ? "Create project" : "Add project",
     disabled: defaultAddProjectEnvironmentId === null,
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,

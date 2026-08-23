@@ -134,6 +134,16 @@ describe("ProviderSendTurnInput", () => {
     expect(getOptionValue(parsed.modelSelection?.options, "fastMode")).toBe(true);
   });
 
+  it("accepts an optional response profile", () => {
+    const parsed = decodeProviderSendTurnInput({
+      threadId: "thread-1",
+      input: "Summarize the report",
+      responseProfile: "work",
+    });
+
+    expect(parsed.responseProfile).toBe("work");
+  });
+
   it("accepts claude modelSelection including ultrathink", () => {
     const parsed = decodeProviderSendTurnInput({
       threadId: "thread-1",

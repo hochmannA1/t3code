@@ -4,6 +4,7 @@ import {
   computeMessageDurationStart,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
+  presentWorkTimelineRows,
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
 } from "./MessagesTimeline.logic";
@@ -273,6 +274,126 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
+  it("folds only settled work activity in Work while keeping narration and plans visible", () => {
+    const timelineEntries = [
+      {
+        id: "assistant-progress-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        message: {
+          id: "assistant-progress" as never,
+          role: "assistant" as const,
+          text: "I am checking the source.",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:01Z",
+          updatedAt: "2026-01-01T00:00:02Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "work-entry",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          id: "work-1",
+          createdAt: "2026-01-01T00:00:03Z",
+          turnId: "turn-1" as never,
+          label: "Inspected the source",
+          tone: "info" as const,
+        },
+      },
+      {
+        id: "turn-plan-entry",
+        kind: "turn-plan" as const,
+        createdAt: "2026-01-01T00:00:03.500Z",
+        turnPlan: {
+          id: "turn-plan-1",
+          createdAt: "2026-01-01T00:00:03.500Z",
+          turnId: "turn-1" as never,
+          plan: {
+            createdAt: "2026-01-01T00:00:03.500Z",
+            turnId: "turn-1" as never,
+            steps: [
+              {
+                step: "Close the demo and report what happened",
+                status: "completed" as const,
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: "assistant-followup-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:03.750Z",
+        message: {
+          id: "assistant-followup" as never,
+          role: "assistant" as const,
+          text: "The source is consistent; I am preparing the result.",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:03.750Z",
+          updatedAt: "2026-01-01T00:00:03.800Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "assistant-final-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:04Z",
+        message: {
+          id: "assistant-final" as never,
+          role: "assistant" as const,
+          text: "The report is ready.",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:04Z",
+          updatedAt: "2026-01-01T00:00:05Z",
+          streaming: false,
+        },
+      },
+    ];
+    const baseInput = {
+      timelineEntries,
+      collapseOnlyWorkActivity: true,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    };
+
+    const collapsedRows = deriveMessagesTimelineRows(baseInput);
+    expect(collapsedRows.map((row) => row.id)).toEqual([
+      "assistant-progress-entry",
+      "turn-fold:turn-1",
+      "turn-plan-entry",
+      "assistant-followup-entry",
+      "assistant-final-entry",
+    ]);
+
+    const expandedRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      expandedTurnIds: new Set(["turn-1" as never]),
+    });
+    expect(expandedRows.map((row) => row.id)).toEqual([
+      "assistant-progress-entry",
+      "turn-fold:turn-1",
+      "work-entry",
+      "turn-plan-entry",
+      "assistant-followup-entry",
+      "assistant-final-entry",
+    ]);
+
+    const codeRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      collapseOnlyWorkActivity: false,
+    });
+    expect(codeRows.map((row) => row.id)).toEqual([
+      "assistant-progress-entry",
+      "turn-fold:turn-1",
+      "turn-plan-entry",
+      "assistant-final-entry",
+    ]);
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
@@ -1520,6 +1641,141 @@ describe("deriveMessagesTimelineRows", () => {
       summary: null,
       hasFailure: true,
     });
+  });
+});
+
+describe("presentWorkTimelineRows", () => {
+  it("keeps multiple active narration messages visible alongside the compact tool status", () => {
+    const turnId = "turn-1" as never;
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-1" as never,
+            role: "user",
+            text: "Prepare the report",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "assistant-first-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:01Z",
+          message: {
+            id: "assistant-first" as never,
+            role: "assistant",
+            text: "I am gathering the figures.",
+            turnId,
+            createdAt: "2026-01-01T00:00:01Z",
+            updatedAt: "2026-01-01T00:00:01Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "work-1",
+            createdAt: "2026-01-01T00:00:02Z",
+            turnId,
+            toolCallId: "tool-1",
+            label: "Read figures",
+            tone: "tool",
+            toolLifecycleStatus: "inProgress",
+          },
+        },
+        {
+          id: "assistant-latest-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:03Z",
+          message: {
+            id: "assistant-latest" as never,
+            role: "assistant",
+            text: "The figures are consistent; I am writing the summary.",
+            turnId,
+            createdAt: "2026-01-01T00:00:03Z",
+            updatedAt: "2026-01-01T00:00:04Z",
+            streaming: true,
+          },
+        },
+      ],
+      latestTurn: {
+        turnId,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      runningTurnId: turnId,
+      collapseOnlyWorkActivity: true,
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(
+      presentWorkTimelineRows({ rows, expandedTurnIds: new Set() }).map((row) => row.id),
+    ).toEqual([
+      "user-entry",
+      "working-indicator-row",
+      "assistant-first-entry",
+      "work-live:tool:turn-1:tool-1",
+      "assistant-latest-entry",
+    ]);
+  });
+
+  it("keeps settled work detail available when its turn disclosure is expanded", () => {
+    const turnId = "turn-1" as never;
+    const expandedTurnIds = new Set([turnId]);
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "work-1",
+            createdAt: "2026-01-01T00:00:01Z",
+            turnId,
+            label: "Checked the figures",
+            tone: "info",
+          },
+        },
+        {
+          id: "assistant-final-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:02Z",
+          message: {
+            id: "assistant-final" as never,
+            role: "assistant",
+            text: "The figures are correct.",
+            turnId,
+            createdAt: "2026-01-01T00:00:02Z",
+            updatedAt: "2026-01-01T00:00:03Z",
+            streaming: false,
+          },
+        },
+      ],
+      expandedTurnIds,
+      collapseOnlyWorkActivity: true,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(presentWorkTimelineRows({ rows, expandedTurnIds }).map((row) => row.id)).toEqual([
+      "turn-fold:turn-1",
+      "work-entry",
+      "assistant-final-entry",
+    ]);
   });
 });
 

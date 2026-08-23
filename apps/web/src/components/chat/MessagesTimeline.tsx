@@ -77,6 +77,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
+  presentWorkTimelineRows,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -134,6 +135,7 @@ import {
 // ---------------------------------------------------------------------------
 
 interface TimelineRowSharedState {
+  simplified: boolean;
   timestampFormat: TimestampFormat;
   routeThreadKey: string;
   threadRef: ScopedThreadRef | null;
@@ -206,6 +208,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 // ---------------------------------------------------------------------------
 
 interface MessagesTimelineProps {
+  simplified?: boolean;
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
   isWorking: boolean;
@@ -251,6 +254,7 @@ interface MessagesTimelineProps {
 // ---------------------------------------------------------------------------
 
 export const MessagesTimeline = memo(function MessagesTimeline({
+  simplified = false,
   isWorking,
   workingStepLabel = null,
   activeTurnStartedAt,
@@ -414,6 +418,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         runningTurnId,
         expandedTurnIds,
         expandedWorkGroupIds,
+        collapseOnlyWorkActivity: simplified,
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
@@ -425,13 +430,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       runningTurnId,
       expandedTurnIds,
       expandedWorkGroupIds,
+      simplified,
       isWorking,
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
     ],
   );
-  const rows = useStableRows(rawRows);
+  const presentedRows = useMemo(
+    () => (simplified ? presentWorkTimelineRows({ rows: rawRows, expandedTurnIds }) : rawRows),
+    [expandedTurnIds, rawRows, simplified],
+  );
+  const rows = useStableRows(presentedRows);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -515,6 +525,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
+      simplified,
       timestampFormat,
       routeThreadKey,
       threadRef: parseScopedThreadKey(routeThreadKey),
@@ -532,6 +543,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenAgents,
     }),
     [
+      simplified,
       timestampFormat,
       routeThreadKey,
       markdownCwd,
@@ -1350,6 +1362,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { workingStepLabel } = use(TimelineRowActivityCtx);
+  const { simplified } = use(TimelineRowCtx);
   return (
     <div>
       <div className="border-b border-border/60 pb-2 pt-1">
@@ -1366,7 +1379,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           ) : null}
         </div>
       </div>
-      {row.showThinking ? (
+      {row.showThinking && !simplified ? (
         <div className="mt-1">
           <ThinkingActivityRow />
         </div>
@@ -1534,18 +1547,23 @@ function LiveActivityContent({
 
 function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {
   const ctx = use(TimelineRowCtx);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot);
+  const technicalLabel = liveWorkEntryLabel(row.entry, ctx.workspaceRoot);
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
+  const label = ctx.simplified ? (failed ? "An action failed" : "Working") : technicalLabel;
 
   return (
     <button
       type="button"
       className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      aria-label={failed ? `${label}, tool call failed` : undefined}
+      aria-label={failed ? (ctx.simplified ? label : `${label}, tool call failed`) : undefined}
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      <LiveActivityRow label={label} iconName={workEntryIconName(row.entry)} failed={failed} />
+      <LiveActivityRow
+        label={label}
+        {...(ctx.simplified ? {} : { iconName: workEntryIconName(row.entry) })}
+        failed={failed}
+      />
     </button>
   );
 }
@@ -1589,7 +1607,13 @@ function WorkGroupToggleTimelineRow({
       <button
         type="button"
         className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
+        aria-label={
+          row.hasFailure
+            ? ctx.simplified
+              ? "Activity includes a failed action"
+              : `${row.summary}, tool call failed`
+            : undefined
+        }
         aria-expanded={row.expanded}
         onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
       >
@@ -1606,7 +1630,9 @@ function WorkGroupToggleTimelineRow({
             className="size-4 shrink-0 stroke-[1.8] opacity-70"
           />
         </span>
-        <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
+        <span className="min-w-0 flex-1 truncate text-secondary-label">
+          {ctx.simplified ? (row.expanded ? "Hide activity" : "View activity") : row.summary}
+        </span>
       </button>
     );
   }
@@ -1647,11 +1673,13 @@ function WorkGroupToggleTimelineRow({
       </span>
       {row.expanded ? (
         <span className="font-medium text-foreground">
-          Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
+          {ctx.simplified
+            ? "Hide activity"
+            : `Show fewer ${row.onlyToolEntries ? "tool calls" : "log entries"}`}
         </span>
       ) : (
         <span className="font-medium text-foreground">
-          +{row.hiddenCount} previous {labelNoun}
+          {ctx.simplified ? "View activity" : `+${row.hiddenCount} previous ${labelNoun}`}
         </span>
       )}
     </button>

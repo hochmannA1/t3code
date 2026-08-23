@@ -42,6 +42,7 @@ import {
   type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
+import { useUiStateStore } from "~/uiStateStore";
 
 const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
@@ -72,13 +73,30 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 }
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+  const appExperience = useUiStateStore((store) => store.appExperience);
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
-  const results = useMemo(() => searchSettings(query), [query]);
+  const visibleNavItems = useMemo(
+    () =>
+      appExperience === "code"
+        ? SETTINGS_NAV_ITEMS
+        : SETTINGS_NAV_ITEMS.filter(
+            (item) => item.to !== "/settings/keybindings" && item.to !== "/settings/source-control",
+          ),
+    [appExperience],
+  );
+  const visiblePaths = useMemo(
+    () => new Set(visibleNavItems.map((item) => item.to)),
+    [visibleNavItems],
+  );
+  const results = useMemo(
+    () => searchSettings(query).filter((item) => visiblePaths.has(item.to)),
+    [query, visiblePaths],
+  );
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
 
@@ -265,7 +283,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))
-              : SETTINGS_NAV_ITEMS.map((item) => {
+              : visibleNavItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
                   return (

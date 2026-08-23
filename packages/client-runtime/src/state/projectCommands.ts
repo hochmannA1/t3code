@@ -7,12 +7,15 @@ import {
   createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 import {
   type CreateProjectInput,
+  type CreateStandaloneProjectInput,
   type DeleteProjectInput,
   type UpdateProjectInput,
   createProject,
+  createStandaloneProject,
   deleteProject,
   updateProject,
 } from "../operations/commands.ts";
@@ -20,6 +23,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 
 export type {
   CreateProjectInput,
+  CreateStandaloneProjectInput,
   DeleteProjectInput,
   UpdateProjectInput,
 } from "../operations/commands.ts";
@@ -58,13 +62,17 @@ export function createProjectEnvironmentAtoms<R, E>(
     searchEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:search-entries",
       tag: WS_METHODS.projectsSearchEntries,
-      staleTimeMs: 15_000,
+      staleTimeMs: 0,
     }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
       tag: WS_METHODS.projectsListEntries,
-      staleTimeMs: 30_000,
+      staleTimeMs: 0,
       idleTtlMs: 5 * 60_000,
+    }),
+    entryChanges: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:projects:entry-changes",
+      tag: WS_METHODS.projectsSubscribeEntryChanges,
     }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
@@ -79,6 +87,15 @@ export function createProjectEnvironmentAtoms<R, E>(
       execute: (input: CreateProjectInput) => createProject(input),
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
+    }),
+    createStandalone: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:project:create-standalone",
+      execute: (input: CreateStandaloneProjectInput) => createStandaloneProject(input),
+      scheduler: projectScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId }) => environmentId,
+      },
     }),
     update: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:update",
@@ -100,6 +117,15 @@ export function createProjectEnvironmentAtoms<R, E>(
         mode: "serial",
         key: ({ environmentId, input }) =>
           JSON.stringify([environmentId, input.cwd, input.relativePath]),
+      },
+    }),
+    refreshEntries: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:refresh-entries",
+      tag: WS_METHODS.projectsRefreshEntries,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "latest",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd]),
       },
     }),
   };

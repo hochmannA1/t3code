@@ -99,6 +99,7 @@ import {
   RelayClientStatusSchema,
 } from "./relayClient.ts";
 import {
+  ProjectEntryChangesEvent,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -199,9 +200,11 @@ export const WS_METHODS = {
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
   projectsListEntries: "projects.listEntries",
+  projectsRefreshEntries: "projects.refreshEntries",
   projectsReadFile: "projects.readFile",
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
+  projectsSubscribeEntryChanges: "projects.subscribeEntryChanges",
   projectsWriteFile: "projects.writeFile",
 
   // Shell methods
@@ -636,6 +639,22 @@ export const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries,
   error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
 });
 
+export const WsProjectsRefreshEntriesRpc = Rpc.make(WS_METHODS.projectsRefreshEntries, {
+  payload: ProjectListEntriesInput,
+  success: ProjectListEntriesResult,
+  error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectsSubscribeEntryChangesRpc = Rpc.make(
+  WS_METHODS.projectsSubscribeEntryChanges,
+  {
+    payload: ProjectListEntriesInput,
+    success: ProjectEntryChangesEvent,
+    error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+
 export const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
   payload: ProjectReadFileInput,
   success: ProjectReadFileResult,
@@ -877,6 +896,15 @@ export const WsOrchestrationDispatchCommandRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationCreateStandaloneProjectRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.createStandaloneProject,
+  {
+    payload: OrchestrationRpcSchemas.createStandaloneProject.input,
+    success: OrchestrationRpcSchemas.createStandaloneProject.output,
+    error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationGetWorkflowScriptRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.getWorkflowScript,
   {
@@ -1027,9 +1055,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
   WsProjectsListEntriesRpc,
+  WsProjectsRefreshEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
+  WsProjectsSubscribeEntryChangesRpc,
   WsProjectsWriteFileRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
@@ -1075,6 +1105,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationDispatchCommandRpc,
+  WsOrchestrationCreateStandaloneProjectRpc,
   WsOrchestrationGetWorkflowScriptRpc,
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,

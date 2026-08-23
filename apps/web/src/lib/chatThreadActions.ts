@@ -9,7 +9,7 @@ interface ThreadContextLike {
 
 interface NewThreadHandler {
   (
-    projectRef: ScopedProjectRef,
+    projectRef: ScopedProjectRef | null,
     options?: {
       branch?: string | null;
       worktreePath?: string | null;
@@ -59,10 +59,6 @@ export async function startNewThreadFromContext(
   context: ChatThreadActionContext,
 ): Promise<boolean> {
   const projectRef = resolveThreadActionProjectRef(context);
-  if (!projectRef) {
-    return false;
-  }
-
-  await context.handleNewThread(projectRef);
-  return true;
+  const result = await context.handleNewThread(projectRef);
+  return result !== null;
 }

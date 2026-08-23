@@ -98,6 +98,13 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { WorkComplexityControl } from "../work/WorkComplexityControl";
+import {
+  DEFAULT_WORK_COMPLEXITY,
+  resolveWorkComplexity,
+  type AppExperience,
+  type WorkComplexity,
+} from "../../workExperience";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -543,6 +550,7 @@ export interface ChatComposerProps {
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
+  appExperience: AppExperience;
 
   // Session phase
   phase: SessionPhase;
@@ -626,6 +634,7 @@ export interface ChatComposerProps {
   ) => void;
 
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onWorkComplexitySelect: (complexity: WorkComplexity, instanceId: ProviderInstanceId) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -655,6 +664,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
+    appExperience,
     phase,
     isConnecting,
     isSendBusy,
@@ -700,6 +710,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    onWorkComplexitySelect,
     getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
@@ -935,6 +946,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
   );
+  const resolvedWorkComplexity = resolveWorkComplexity(selectedModelSelection, selectedInstanceId);
+  const selectedWorkComplexity = resolvedWorkComplexity ?? DEFAULT_WORK_COMPLEXITY;
+  useEffect(() => {
+    if (appExperience === "work" && resolvedWorkComplexity === null) {
+      onWorkComplexitySelect(DEFAULT_WORK_COMPLEXITY, selectedInstanceId);
+    }
+  }, [appExperience, onWorkComplexitySelect, resolvedWorkComplexity, selectedInstanceId]);
   const selectedModelForPicker = selectedModel;
   // Instance-keyed option list so the picker can show each configured
   // instance (built-in + custom) as a first-class sidebar entry. The
@@ -3282,7 +3300,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Enable a provider in Settings to send a message"
                               : phase === "disconnected"
                                 ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                : appExperience === "work"
+                                  ? "What would you like to get done?"
+                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
                   }
                   disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
                 />
@@ -3348,6 +3368,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       <CircleAlertIcon className="size-4" />
                       No provider available
                     </Button>
+                  ) : appExperience === "work" ? (
+                    <WorkComplexityControl
+                      value={selectedWorkComplexity}
+                      onValueChange={(complexity) =>
+                        onWorkComplexitySelect(complexity, selectedInstanceId)
+                      }
+                      disabled={isSendBusy || isConnecting}
+                    />
                   ) : (
                     <ProviderModelPicker
                       compact={isComposerFooterCompact}
@@ -3375,7 +3403,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     />
                   )}
 
-                  {isComposerFooterCompact ? (
+                  {appExperience === "work" ? null : isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
@@ -3420,8 +3448,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   {showMobilePendingAnswerActions ? null : inlineStashBadge}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
-                    activeContextWindow={activeContextWindow}
-                    activeThreadModelDisplayName={activeThreadModelDisplayName}
+                    activeContextWindow={appExperience === "work" ? null : activeContextWindow}
+                    activeThreadModelDisplayName={
+                      appExperience === "work" ? null : activeThreadModelDisplayName
+                    }
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
                     showPlanFollowUpPrompt={

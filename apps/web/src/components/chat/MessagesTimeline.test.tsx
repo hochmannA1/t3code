@@ -274,6 +274,80 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("px-1 text-sm leading-relaxed text-muted-foreground");
   });
 
+  it("keeps narration visible while collapsing settled technical activity in Work", () => {
+    const turnId = TurnId.make("turn-work-compact");
+    const timelineEntries = [
+      {
+        id: "assistant-progress-entry",
+        kind: "message" as const,
+        createdAt: "2026-03-17T19:12:21.000Z",
+        message: {
+          id: MessageId.make("assistant-progress"),
+          role: "assistant" as const,
+          text: "I am checking the figures.",
+          turnId,
+          createdAt: "2026-03-17T19:12:21.000Z",
+          updatedAt: "2026-03-17T19:12:22.000Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "work-entry",
+        kind: "work" as const,
+        createdAt: "2026-03-17T19:12:23.000Z",
+        entry: {
+          id: "work-1",
+          createdAt: "2026-03-17T19:12:23.000Z",
+          turnId,
+          label: "Inspected a spreadsheet",
+          tone: "info" as const,
+        },
+      },
+      {
+        id: "assistant-final-entry",
+        kind: "message" as const,
+        createdAt: "2026-03-17T19:12:24.000Z",
+        message: {
+          id: MessageId.make("assistant-final"),
+          role: "assistant" as const,
+          text: "The figures are correct.",
+          turnId,
+          createdAt: "2026-03-17T19:12:24.000Z",
+          updatedAt: "2026-03-17T19:12:25.000Z",
+          streaming: false,
+        },
+      },
+    ];
+    const latestTurn = {
+      turnId,
+      state: "completed" as const,
+      startedAt: "2026-03-17T19:12:20.000Z",
+      completedAt: "2026-03-17T19:12:25.000Z",
+    };
+
+    const workMarkup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        simplified
+        latestTurn={latestTurn}
+        timelineEntries={timelineEntries}
+      />,
+    );
+    const codeMarkup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        latestTurn={latestTurn}
+        timelineEntries={timelineEntries}
+      />,
+    );
+
+    expect(workMarkup).toContain("Worked for 5.0s");
+    expect(workMarkup).toContain("The figures are correct.");
+    expect(workMarkup).toContain("I am checking the figures.");
+    expect(workMarkup).not.toContain("Inspected a spreadsheet");
+    expect(codeMarkup).toContain("I am checking the figures.");
+  });
+
   it("uses the larger leading inset only when the top fade is enabled", () => {
     const timelineEntries = [buildUserTimelineEntry("Hello")];
 

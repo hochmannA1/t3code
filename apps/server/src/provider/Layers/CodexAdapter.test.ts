@@ -348,6 +348,7 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
             { id: "reasoningEffort", value: "high" },
             { id: "serviceTier", value: "priority" },
           ]),
+          responseProfile: "work",
           attachments: [],
         }),
       );
@@ -357,6 +358,7 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
         model: "gpt-5.3-codex",
         effort: "high",
         serviceTier: "priority",
+        responseProfile: "work",
       });
     }),
   );

@@ -7,7 +7,7 @@ import type {
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
@@ -129,6 +129,14 @@ export function useProjectEntriesQuery(
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
   const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  const changes = useAtomValue(projectEnvironment.entryChanges({ environmentId, input: { cwd } }));
+  const changeRevision = Option.getOrNull(AsyncResult.value(changes))?.revision ?? null;
+
+  useEffect(() => {
+    if (changeRevision === null || changeRevision === 0) return;
+    refresh();
+  }, [changeRevision, refresh]);
+
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
     error: errorMessage(result),

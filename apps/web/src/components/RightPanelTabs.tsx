@@ -80,6 +80,7 @@ interface RightPanelTabsProps {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
+  hiddenSurfaceKinds?: ReadonlySet<RightPanelSurface["kind"]>;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
   liveAgentCount: number;
@@ -259,12 +260,14 @@ function RightPanelEmptyState(props: {
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   liveAgentCount: number;
+  hiddenSurfaceKinds?: ReadonlySet<RightPanelSurface["kind"]>;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
   const actions = [
     {
+      kind: "preview",
       label: "Browser",
       description: "Open a local app or URL.",
       icon: Globe2,
@@ -275,6 +278,7 @@ function RightPanelEmptyState(props: {
       badgeCount: 0,
     },
     {
+      kind: "terminal",
       label: "Terminal",
       description: "Start a shell in this workspace.",
       icon: TerminalSquare,
@@ -285,6 +289,7 @@ function RightPanelEmptyState(props: {
       badgeCount: 0,
     },
     {
+      kind: "files",
       label: "Files",
       description: "Browse and read workspace files.",
       icon: Files,
@@ -295,6 +300,7 @@ function RightPanelEmptyState(props: {
       badgeCount: 0,
     },
     {
+      kind: "diff",
       label: "Diff",
       description: "Review changes in this thread.",
       icon: FileDiff,
@@ -305,6 +311,7 @@ function RightPanelEmptyState(props: {
       badgeCount: 0,
     },
     {
+      kind: "pull-request",
       label: "Pull request",
       description: "Open this branch's pull request.",
       icon: GitPullRequest,
@@ -315,6 +322,7 @@ function RightPanelEmptyState(props: {
       badgeCount: 0,
     },
     {
+      kind: "agents",
       label: "Agents",
       description: "Follow subagents and workflows.",
       icon: Bot,
@@ -328,7 +336,8 @@ function RightPanelEmptyState(props: {
 
   type SurfaceAction = (typeof actions)[number];
 
-  const availableActions = actions.filter((action) => action.available);
+  const visibleActions = actions.filter((action) => !props.hiddenSurfaceKinds?.has(action.kind));
+  const availableActions = visibleActions.filter((action) => action.available);
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -435,7 +444,7 @@ function RightPanelEmptyState(props: {
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {actions.map((action) =>
+          {visibleActions.map((action) =>
             action.available ? (
               <button
                 key={action.label}
@@ -604,6 +613,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   const addSurfaceActions = [
     {
+      kind: "preview",
       label: "Browser",
       icon: Globe2,
       shortcut: "B",
@@ -612,6 +622,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddBrowser,
     },
     {
+      kind: "terminal",
       label: "Terminal",
       icon: TerminalSquare,
       shortcut: "T",
@@ -620,6 +631,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddTerminal,
     },
     {
+      kind: "files",
       label: "Files",
       icon: Files,
       shortcut: "F",
@@ -628,6 +640,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddFiles,
     },
     {
+      kind: "diff",
       label: "Diff",
       icon: FileDiff,
       shortcut: "D",
@@ -636,6 +649,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddDiff,
     },
     {
+      kind: "pull-request",
       label: "Pull request",
       icon: GitPullRequest,
       shortcut: "P",
@@ -644,6 +658,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddPullRequest,
     },
     {
+      kind: "agents",
       label: "Agents",
       icon: Bot,
       shortcut: "A",
@@ -652,9 +667,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddAgents,
     },
   ] as const;
+  const visibleAddSurfaceActions = addSurfaceActions.filter(
+    (action) => !props.hiddenSurfaceKinds?.has(action.kind),
+  );
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
+    const action = surfaceShortcutActionForKey(visibleAddSurfaceActions, event.nativeEvent);
     if (!action) return;
     event.preventDefault();
     event.stopPropagation();
@@ -912,7 +930,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   className="min-w-44"
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
-                  {addSurfaceActions.map((action) => {
+                  {visibleAddSurfaceActions.map((action) => {
                     const Icon = action.icon;
                     return (
                       <SurfaceMenuItem
@@ -950,6 +968,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             agentsAvailable={props.agentsAvailable}
             liveAgentCount={props.liveAgentCount}
+            {...(props.hiddenSurfaceKinds ? { hiddenSurfaceKinds: props.hiddenSurfaceKinds } : {})}
           />
         ) : (
           props.children

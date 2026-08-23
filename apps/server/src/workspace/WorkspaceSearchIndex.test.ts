@@ -4,11 +4,14 @@ import {
   type GrepCursor,
   type GrepOptions,
   type GrepResult,
+  type WatchEvent,
 } from "@ff-labs/fff-node";
 import { afterEach, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
 
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -138,6 +141,47 @@ it.effect("preserves a full-index warmup timeout as a structured error", () =>
       timeout: "15 seconds",
     });
   }),
+);
+
+it.effect("emits entry changes for structural watcher events", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let callback: (events: WatchEvent[]) => void = () => {
+        throw new Error("watch callback was not registered");
+      };
+      let markRegistered: () => void = () => {};
+      const registered = new Promise<void>((resolve) => {
+        markRegistered = resolve;
+      });
+      const unsubscribe = vi.fn();
+      const finder = {
+        destroy: vi.fn(),
+        waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+        watch: vi.fn((next: (events: WatchEvent[]) => void) => {
+          callback = next;
+          markRegistered();
+          return { ok: true as const, value: unsubscribe };
+        }),
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project");
+      const eventsFiber = yield* searchIndex.changes.pipe(
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* Effect.promise(() => registered);
+
+      callback([{ kind: "modified", path: "/workspace/project/existing.txt" }]);
+      callback([{ kind: "created", path: "/workspace/project/report.xls" }]);
+
+      const events = yield* Fiber.join(eventsFiber);
+      expect(Array.from(events)).toEqual([{ revision: 0 }, { revision: 1 }]);
+      yield* Effect.yieldNow;
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+    }),
+  ),
 );
 
 it.effect("preserves FileFinder destroy failures as structured defects", () =>

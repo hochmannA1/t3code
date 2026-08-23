@@ -1,6 +1,7 @@
 import {
   CommandId,
   ORCHESTRATION_WS_METHODS,
+  type StandaloneProjectCreateInput,
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -29,6 +30,7 @@ type CommandInput<T extends CommandType> = Omit<
     : {});
 
 export type CreateProjectInput = CommandInput<"project.create">;
+export type CreateStandaloneProjectInput = StandaloneProjectCreateInput;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
 export type CreateThreadInput = CommandInput<"thread.create">;
@@ -97,6 +99,12 @@ export const createProject: (input: CreateProjectInput) => CommandEffect = Effec
     createdAt: metadata.createdAt,
   });
 });
+
+export const createStandaloneProject = Effect.fn("EnvironmentCommands.createStandaloneProject")(
+  function* (input: CreateStandaloneProjectInput) {
+    return yield* request(ORCHESTRATION_WS_METHODS.createStandaloneProject, input);
+  },
+);
 
 export const updateProject: (input: UpdateProjectInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.updateProject",

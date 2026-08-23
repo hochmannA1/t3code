@@ -197,6 +197,41 @@ describe("buildTurnStartParams", () => {
     NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
   });
 
+  it.effect("adds Work guidance without changing Code instructions", () =>
+    Effect.gen(function* () {
+      const baseInput = {
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access" as const,
+        prompt: "Summarize the report",
+        interactionMode: "default" as const,
+      };
+      const omitted = yield* buildTurnStartParams(baseInput);
+      const code = yield* buildTurnStartParams({ ...baseInput, responseProfile: "code" });
+      const work = yield* buildTurnStartParams({ ...baseInput, responseProfile: "work" });
+
+      NodeAssert.equal(
+        code.collaborationMode?.settings.developer_instructions,
+        omitted.collaborationMode?.settings.developer_instructions,
+      );
+      NodeAssert.match(
+        work.collaborationMode?.settings.developer_instructions ?? "",
+        /Write for business professionals/,
+      );
+      NodeAssert.match(
+        work.collaborationMode?.settings.developer_instructions ?? "",
+        /100 to 150 words/,
+      );
+      NodeAssert.match(
+        work.collaborationMode?.settings.developer_instructions ?? "",
+        /Never announce or describe these response-profile rules/,
+      );
+      NodeAssert.doesNotMatch(
+        omitted.collaborationMode?.settings.developer_instructions ?? "",
+        /Write for business professionals/,
+      );
+    }),
+  );
+
   it.effect("routes approvals to the auto reviewer in auto mode", () =>
     Effect.gen(function* () {
       const params = yield* buildTurnStartParams({

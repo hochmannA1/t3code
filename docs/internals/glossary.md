@@ -24,6 +24,15 @@ The top-level workspace record in the app. In [the orchestration contracts][1], 
 
 The root filesystem path for a project. In [the orchestration model][1], it is the base directory for branches and optional worktrees. See [workspace-layout.md][2].
 
+#### Standalone project
+
+A project created for a new chat when the user did not choose an existing project. The client sends
+the first request to `orchestration.createStandaloneProject`. The environment server reserves a new
+directory under `~/t3work/projects/YYYY-MM-DD/<request-slug>` and then registers it through the
+ordinary `project.create` command. Existing directories get numeric suffixes such as `-2`. Path
+allocation stays on the environment server so remote clients never derive server filesystem paths.
+See [StandaloneProject.ts][25].
+
 #### Worktree
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
@@ -179,3 +188,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ../../apps/server/src/orchestration/StandaloneProject.ts

@@ -56,6 +56,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -4784,6 +4785,65 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
+  it.effect("routes websocket rpc projects.refreshEntries", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-refresh-files-",
+      });
+      yield* fs.writeFileString(path.join(workspaceDir, "existing.txt"), "existing\n");
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            yield* client[WS_METHODS.projectsListEntries]({ cwd: workspaceDir });
+            yield* fs.writeFileString(path.join(workspaceDir, "report.xls"), "");
+            return yield* client[WS_METHODS.projectsRefreshEntries]({ cwd: workspaceDir });
+          }),
+        ),
+      );
+
+      assert.isTrue(response.entries.some((entry) => entry.path === "report.xls"));
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("streams project entry changes after the watcher is ready", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-entry-changes-",
+      });
+      yield* fs.writeFileString(path.join(workspaceDir, "existing.txt"), "existing\n");
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const events = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsSubscribeEntryChanges]({ cwd: workspaceDir }).pipe(
+            Stream.tap((event) =>
+              event.revision === 0
+                ? fs.writeFileString(path.join(workspaceDir, "report.xls"), "")
+                : Effect.void,
+            ),
+            Stream.take(2),
+            Stream.runCollect,
+          ),
+        ),
+      );
+
+      assert.deepEqual(
+        Array.from(events, (event) => event.revision),
+        [0, 1],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
   it.effect("routes websocket rpc projects.searchEntries excludes gitignored files", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -5041,6 +5101,63 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.isAtLeast(response.sequence, 0);
       assert.equal(stat.type, "Directory");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("allocates and registers standalone projects on the server", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-08-23T07:00:00.000Z"));
+      const fs = yield* FileSystem.FileSystem;
+      const projectsRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-standalone-project-",
+      });
+      const dispatchCalls = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+
+      yield* buildAppUnderTest({
+        config: { standaloneProjectsDir: projectsRoot },
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Ref.updateAndGet(dispatchCalls, (calls) => [...calls, command]).pipe(
+                Effect.map((calls) => ({ sequence: calls.length })),
+              ),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const results = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all([
+            client[ORCHESTRATION_WS_METHODS.createStandaloneProject]({
+              request: "Prepare quarterly report",
+            }),
+            client[ORCHESTRATION_WS_METHODS.createStandaloneProject]({
+              request: "Prepare quarterly report",
+            }),
+          ]),
+        ),
+      );
+
+      assert.deepStrictEqual(results.map((result) => result.title).sort(), [
+        "prepare-quarterly-report",
+        "prepare-quarterly-report-2",
+      ]);
+      for (const result of results) {
+        assert.equal((yield* fs.stat(result.workspaceRoot)).type, "Directory");
+        assert.include(result.workspaceRoot, "/2026-08-23/");
+      }
+
+      const commands = yield* Ref.get(dispatchCalls);
+      assert.lengthOf(commands, 2);
+      for (const command of commands) {
+        assert.equal(command.type, "project.create");
+        if (command.type !== "project.create") continue;
+        assert.equal(
+          command.workspaceRoot,
+          results.find((result) => result.title === command.title)?.workspaceRoot,
+        );
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

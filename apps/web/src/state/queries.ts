@@ -287,6 +287,23 @@ export function useProjectPathSearch(
         })
       : null,
   );
+  const entryChanges = useEnvironmentQuery(
+    normalizedTarget.environmentId !== null &&
+      normalizedTarget.cwd !== null &&
+      normalizedTarget.query !== null &&
+      (allowEmptyQuery || normalizedTarget.query.length > 0)
+      ? projectEnvironment.entryChanges({
+          environmentId: normalizedTarget.environmentId,
+          input: { cwd: normalizedTarget.cwd },
+        })
+      : null,
+  );
+  const changeRevision = entryChanges.data?.revision ?? null;
+
+  useEffect(() => {
+    if (changeRevision === null || changeRevision === 0) return;
+    result.refresh();
+  }, [changeRevision, result.refresh]);
 
   return {
     entries: result.data?.entries ?? [],

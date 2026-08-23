@@ -17,6 +17,7 @@ import {
   ProviderApprovalPolicy,
   ProviderInteractionMode,
   ProviderRequestKind,
+  ResponseProfile,
   ProviderSandboxMode,
   ProviderUserInputAnswers,
   RuntimeMode,
@@ -75,6 +76,7 @@ export const ProviderSendTurnInput = Schema.Struct({
   ),
   modelSelection: Schema.optional(ModelSelection),
   interactionMode: Schema.optional(ProviderInteractionMode),
+  responseProfile: Schema.optional(ResponseProfile),
 });
 export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;
 

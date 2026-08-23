@@ -73,6 +73,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { createStandaloneProject } from "./orchestration/StandaloneProject.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -200,6 +201,12 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
     case "WorkspaceSearchIndexSearchFailed":
       return {
         failure: "search_index_search_failed",
+        normalizedCwd: error.cwd,
+        detail: error.reason,
+      };
+    case "WorkspaceSearchIndexWatchFailed":
+      return {
+        failure: "search_index_watch_failed",
         normalizedCwd: error.cwd,
         detail: error.reason,
       };
@@ -1216,6 +1223,19 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.createStandaloneProject]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.createStandaloneProject,
+            createStandaloneProject({
+              request: input.request,
+              ...(config.standaloneProjectsDir === undefined
+                ? {}
+                : { projectsRoot: config.standaloneProjectsDir }),
+              dispatch: (command) =>
+                normalizeDispatchCommand(command).pipe(Effect.flatMap(dispatchNormalizedCommand)),
+            }),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.getWorkflowScript]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.getWorkflowScript,
@@ -1874,6 +1894,37 @@ const makeWsRpcLayer = (
             WS_METHODS.projectsListEntries,
             workspaceEntries.list(input).pipe(
               Effect.mapError(
+                (cause) =>
+                  new ProjectListEntriesError({
+                    ...input,
+                    ...projectEntriesFailureContext(cause),
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsRefreshEntries]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsRefreshEntries,
+            workspaceEntries.refresh(input.cwd).pipe(
+              Effect.andThen(workspaceEntries.list(input)),
+              Effect.mapError(
+                (cause) =>
+                  new ProjectListEntriesError({
+                    ...input,
+                    ...projectEntriesFailureContext(cause),
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsSubscribeEntryChanges]: (input) =>
+          observeRpcStream(
+            WS_METHODS.projectsSubscribeEntryChanges,
+            workspaceEntries.changes(input.cwd).pipe(
+              Stream.mapError(
                 (cause) =>
                   new ProjectListEntriesError({
                     ...input,

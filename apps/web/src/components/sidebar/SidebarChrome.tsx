@@ -6,11 +6,12 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
-import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
+import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
+import { useUiStateStore } from "../../uiStateStore";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -31,6 +32,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import { ExperienceSwitch } from "../work/ExperienceSwitch";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -80,25 +82,23 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 });
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  const setAppExperience = useUiStateStore((store) => store.setAppExperience);
+
   return (
-    <Link
-      aria-label="Go to threads"
+    <div
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] flex h-8 w-fit min-w-0 shrink-0 items-center gap-0.5",
         onBackdrop ? "text-white" : "text-foreground",
       )}
-      to="/"
     >
       <T3Wordmark />
-      <span
-        className={cn(
-          "-translate-y-px truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Code
-      </span>
-    </Link>
+      <ExperienceSwitch
+        value={appExperience}
+        onValueChange={setAppExperience}
+        className={cn(onBackdrop && "text-white hover:bg-white/15 [&_svg]:text-white/70")}
+      />
+    </div>
   );
 }
 
@@ -144,6 +144,7 @@ function SidebarUtilityItem({
 }
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+  const appExperience = useUiStateStore((store) => store.appExperience);
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -209,18 +210,20 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
-          {pullRequestsSupported ? (
+          {appExperience === "code" && pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<GitPullRequestIcon />}
               label="Pull Requests"
               onClick={handlePullRequestsClick}
             />
           ) : null}
-          <SidebarUtilityItem
-            icon={<ChartNoAxesColumnIcon />}
-            label="Usage"
-            onClick={handleUsageClick}
-          />
+          {appExperience === "code" ? (
+            <SidebarUtilityItem
+              icon={<ChartNoAxesColumnIcon />}
+              label="Usage"
+              onClick={handleUsageClick}
+            />
+          ) : null}
         </>
       )}
       <SidebarUpdatePill />
@@ -229,10 +232,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 });
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+  const appExperience = useUiStateStore((store) => store.appExperience);
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
-      <SidebarProviderUpdatePill />
-      <SidebarUpdateArchitectureWarning />
+      {appExperience === "code" ? <SidebarProviderUpdatePill /> : null}
+      {appExperience === "code" ? <SidebarUpdateArchitectureWarning /> : null}
       <SidebarUtilityMenu />
     </SidebarFooter>
   );

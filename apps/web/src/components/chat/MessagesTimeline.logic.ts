@@ -521,16 +521,17 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
 }
 
 /**
- * Settled turns keep their first and terminal assistant messages visible.
- * Everything between them folds behind a "Worked for ..." row anchored at
- * the first hidden entry. Keeping both ends prevents a short follow-up from
- * hiding a substantive opening response while still bounding noisy turns.
+ * Settled turns normally keep their first and terminal assistant messages
+ * visible. Everything between them folds behind a "Worked for ..." row
+ * anchored at the first hidden entry. Work presentation narrows the fold to
+ * technical work-log activity and leaves every assistant narration visible.
  */
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
   latestTurn: TimelineLatestTurn | null;
   unsettledTurnId: TurnId | null;
+  collapseOnlyWorkActivity: boolean;
 }): ReadonlyMap<string, TurnFold> {
   interface TurnGroup {
     entries: Array<TimelineEntry>;
@@ -599,13 +600,20 @@ function deriveTurnFolds(input: {
     );
     const hiddenEntryIds = new Set<string>();
     for (const entry of group.entries) {
+      if (input.collapseOnlyWorkActivity && entry.kind !== "work") {
+        continue;
+      }
       if (entry.id === firstAssistantEntry?.id || entry.id === group.terminalEntry?.id) {
         continue;
       }
-      // Agent-spawn CTA rows never fold: workflows outlive their launching
-      // turn (dynamic spawns, background execution), and folding the CTA
-      // when the turn settles makes a still-running fleet invisible.
-      if (entry.kind === "work" && entry.entry.agentSpawn !== undefined) {
+      // Code presentation keeps agent-spawn CTAs visible because workflows
+      // can outlive their launching turn. Compact presentation folds the
+      // completed turn's activity with the rest of its trace.
+      if (
+        !input.collapseOnlyWorkActivity &&
+        entry.kind === "work" &&
+        entry.entry.agentSpawn !== undefined
+      ) {
         continue;
       }
       hiddenEntryIds.add(entry.id);
@@ -663,6 +671,7 @@ export function deriveMessagesTimelineRows(input: {
   runningTurnId?: TurnId | null;
   expandedTurnIds?: ReadonlySet<TurnId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
+  collapseOnlyWorkActivity?: boolean;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
@@ -682,6 +691,7 @@ export function deriveMessagesTimelineRows(input: {
     terminalAssistantMessageIds,
     latestTurn: input.latestTurn ?? null,
     unsettledTurnId,
+    collapseOnlyWorkActivity: input.collapseOnlyWorkActivity ?? false,
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
@@ -1035,6 +1045,25 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   return nextRows;
+}
+
+/**
+ * Work mode suppresses standalone work-log rows while keeping assistant
+ * narration visible. Expanded disclosures restore their technical detail.
+ * Code mode bypasses this projection and retains the full timeline.
+ */
+export function presentWorkTimelineRows(input: {
+  rows: ReadonlyArray<MessagesTimelineRow>;
+  expandedTurnIds: ReadonlySet<TurnId>;
+}): MessagesTimelineRow[] {
+  return input.rows.filter(
+    (row) =>
+      row.kind !== "work" ||
+      row.isExpandedToolGroupEntry ||
+      row.groupedEntries.some(
+        (entry) => entry.turnId != null && input.expandedTurnIds.has(entry.turnId),
+      ),
+  );
 }
 
 export function computeStableMessagesTimelineRows(

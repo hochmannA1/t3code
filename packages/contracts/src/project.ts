@@ -81,6 +81,11 @@ export const ProjectListEntriesResult = Schema.Struct({
 });
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
+export const ProjectEntryChangesEvent = Schema.Struct({
+  revision: NonNegativeInt,
+});
+export type ProjectEntryChangesEvent = typeof ProjectEntryChangesEvent.Type;
+
 export const ProjectEntriesFailure = Schema.Literals([
   "workspace_root_not_found",
   "workspace_root_create_failed",
@@ -89,6 +94,7 @@ export const ProjectEntriesFailure = Schema.Literals([
   "search_index_create_failed",
   "search_index_scan_timed_out",
   "search_index_search_failed",
+  "search_index_watch_failed",
 ]);
 export type ProjectEntriesFailure = typeof ProjectEntriesFailure.Type;
 

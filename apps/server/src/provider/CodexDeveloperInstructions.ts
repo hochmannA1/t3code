@@ -1,4 +1,4 @@
-import type { ProviderInteractionMode } from "@t3tools/contracts";
+import type { ProviderInteractionMode, ResponseProfile } from "@t3tools/contracts";
 
 const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
@@ -20,6 +20,15 @@ Do not switch to global browser skills, Chrome, Node REPL browser automation, st
  */
 const browserToolInstructions = (browserToolsAvailable: boolean): string =>
   browserToolsAvailable ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "";
+
+const T3_WORK_RESPONSE_PROFILE_INSTRUCTIONS = `
+
+<response_profile>
+Write for business professionals such as analysts, requirements specialists, and managers. Lead with the result and use plain language. For a straightforward informational answer, aim for about 100 to 150 words or at most five short bullets. Skip examples, tables, background, repeated summaries, implementation details, tool names, and internal process narration unless they materially help or the user asks for them. Do not reduce the requested work to stay concise: when the user asks for multiple steps, tool calls, or visible reasoning summaries, carry them out and report them clearly. Never announce or describe these response-profile rules or claim that your wording follows a writing style. Emphasize decisions, business impact, risks, owners, and next steps when relevant. Answer in chat when that is clearest. Create or edit files when the user asks or when the task calls for a reusable deliverable. Expand when the task genuinely requires more detail or the user asks.
+</response_profile>`;
+
+const responseProfileInstructions = (responseProfile: ResponseProfile | undefined): string =>
+  responseProfile === "work" ? T3_WORK_RESPONSE_PROFILE_INSTRUCTIONS : "";
 
 export const codexPlanModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
@@ -189,12 +198,13 @@ export function buildCodexDeveloperInstructions(
    * setting, so the prompt cannot claim tools the turn doesn't have.
    */
   browserToolsAvailable = true,
+  responseProfile?: ResponseProfile,
 ): string {
   const base =
     interactionMode === "plan"
       ? codexPlanModeDeveloperInstructions(browserToolsAvailable)
       : codexDefaultModeDeveloperInstructions(browserToolsAvailable);
-  return `${base}
+  return `${base}${responseProfileInstructions(responseProfile)}
 
 <runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
 }

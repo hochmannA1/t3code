@@ -19,6 +19,8 @@ import {
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationSession,
+  StandaloneProjectCreateInput,
+  StandaloneProjectCreateResult,
   OrchestrationThread,
   OrchestrationThreadShell,
   ProjectCreateCommand,
@@ -35,6 +37,10 @@ const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffI
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
+const decodeStandaloneProjectCreateInput = Schema.decodeUnknownEffect(StandaloneProjectCreateInput);
+const decodeStandaloneProjectCreateResult = Schema.decodeUnknownEffect(
+  StandaloneProjectCreateResult,
+);
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
 const decodeProjectMetaUpdatedPayload = Schema.decodeUnknownEffect(ProjectMetaUpdatedPayload);
 const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartCommand);
@@ -176,6 +182,28 @@ it.effect("decodes project.create with createWorkspaceRootIfMissing enabled", ()
   }),
 );
 
+it.effect("decodes standalone project creation RPC payloads", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeStandaloneProjectCreateInput({
+      request: "  Prepare the quarterly report  ",
+    });
+    const result = yield* decodeStandaloneProjectCreateResult({
+      projectId: " project-1 ",
+      title: " quarterly-report ",
+      workspaceRoot: " /home/user/t3work/projects/2026-08-23/quarterly-report ",
+      sequence: 4,
+    });
+
+    assert.strictEqual(input.request, "Prepare the quarterly report");
+    assert.deepStrictEqual(result, {
+      projectId: "project-1",
+      title: "quarterly-report",
+      workspaceRoot: "/home/user/t3work/projects/2026-08-23/quarterly-report",
+      sequence: 4,
+    });
+  }),
+);
+
 it.effect("decodes historical project.created payloads with a default provider", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeProjectCreatedPayload({
@@ -241,6 +269,7 @@ it.effect("decodes thread.turn.start defaults for provider and runtime mode", ()
     assert.strictEqual(parsed.modelSelection, undefined);
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+    assert.strictEqual(parsed.responseProfile, undefined);
   }),
 );
 
@@ -261,11 +290,13 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
         model: "gpt-5.4",
       },
       runtimeMode: "full-access",
+      responseProfile: "work",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.modelSelection?.instanceId, "codex");
     assert.strictEqual(parsed.runtimeMode, "full-access");
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+    assert.strictEqual(parsed.responseProfile, "work");
   }),
 );
 
@@ -738,6 +769,7 @@ it.effect(
       assert.strictEqual(parsed.modelSelection, undefined);
       assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
       assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+      assert.strictEqual(parsed.responseProfile, undefined);
       assert.strictEqual(parsed.sourceProposedPlan, undefined);
     }),
 );
@@ -766,9 +798,11 @@ it.effect("decodes thread.turn-start-requested title seed when present", () =>
       threadId: "thread-2",
       messageId: "msg-2",
       titleSeed: "Investigate reconnect failures",
+      responseProfile: "work",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.titleSeed, "Investigate reconnect failures");
+    assert.strictEqual(parsed.responseProfile, "work");
   }),
 );
 

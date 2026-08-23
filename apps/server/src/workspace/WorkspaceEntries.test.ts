@@ -121,6 +121,36 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(result.truncated).toBe(false);
       }),
     );
+
+    it.effect("indexes binary document extensions in non-git workspaces", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-binary-documents-" });
+        yield* writeTextFile(cwd, "documents/report.xls", "spreadsheet");
+        yield* writeTextFile(cwd, "documents/brief.docx", "document");
+        yield* writeTextFile(cwd, "documents/notes.txt", "notes");
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const listResult = yield* workspaceEntries.list({ cwd });
+        const searchResult = yield* workspaceEntries.search({
+          cwd,
+          query: "",
+          limit: 100,
+          kind: "file",
+        });
+
+        const expectedPaths = [
+          "documents/report.xls",
+          "documents/brief.docx",
+          "documents/notes.txt",
+        ];
+        expect(listResult.entries.map((entry) => entry.path)).toEqual(
+          expect.arrayContaining(expectedPaths),
+        );
+        expect(searchResult.entries.map((entry) => entry.path)).toEqual(
+          expect.arrayContaining(expectedPaths),
+        );
+      }),
+    );
   });
 
   describe("search", () => {

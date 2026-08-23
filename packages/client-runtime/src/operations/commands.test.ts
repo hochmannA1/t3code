@@ -24,6 +24,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
+  createStandaloneProject,
   settleThread,
   stopThreadSession,
   unsettleThread,
@@ -46,12 +47,23 @@ const TARGET = new PrimaryConnectionTarget({
 
 const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(function* (
   dispatched: ClientOrchestrationCommand[],
+  standaloneRequests: string[] = [],
 ) {
   const client = {
     [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command: ClientOrchestrationCommand) =>
       Effect.sync(() => {
         dispatched.push(command);
         return { sequence: dispatched.length };
+      }),
+    [ORCHESTRATION_WS_METHODS.createStandaloneProject]: (input: { request: string }) =>
+      Effect.sync(() => {
+        standaloneRequests.push(input.request);
+        return {
+          projectId: ProjectId.make("standalone-project"),
+          title: "prepare-quarterly-report",
+          workspaceRoot: "/home/user/t3work/projects/2026-08-23/prepare-quarterly-report",
+          sequence: 2,
+        };
       }),
   } as unknown as WsRpcProtocolClient;
   const session: RpcSession.RpcSession = {
@@ -97,6 +109,25 @@ describe("environment commands", () => {
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("requests standalone project allocation from the target environment", () =>
+    Effect.gen(function* () {
+      const standaloneRequests: string[] = [];
+      const supervisor = yield* makeSupervisor([], standaloneRequests);
+
+      const result = yield* createStandaloneProject({
+        request: "Prepare quarterly report",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(standaloneRequests).toEqual(["Prepare quarterly report"]);
+      expect(result).toEqual({
+        projectId: "standalone-project",
+        title: "prepare-quarterly-report",
+        workspaceRoot: "/home/user/t3work/projects/2026-08-23/prepare-quarterly-report",
+        sequence: 2,
+      });
+    }),
   );
 
   it.effect("preserves caller metadata for idempotent queued commands", () =>

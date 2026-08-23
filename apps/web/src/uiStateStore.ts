@@ -1,6 +1,7 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
+import { DEFAULT_APP_EXPERIENCE, isAppExperience, type AppExperience } from "./workExperience";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
@@ -18,6 +19,7 @@ const LEGACY_PERSISTED_STATE_KEYS = [
 ] as const;
 
 export interface PersistedUiState {
+  appExperience?: unknown;
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
   threadLastVisitedAtById?: Record<string, string>;
@@ -43,9 +45,15 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState {}
+export interface UiExperienceState {
+  appExperience: AppExperience;
+}
+
+export interface UiState
+  extends UiProjectState, UiThreadState, UiEndpointState, UiExperienceState {}
 
 const initialState: UiState = {
+  appExperience: DEFAULT_APP_EXPERIENCE,
   projectExpandedById: {},
   projectOrder: [],
   threadLastVisitedAtById: {},
@@ -123,6 +131,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       : sanitizeStringArray(parsed.projectOrder);
 
   return {
+    appExperience: isAppExperience(parsed.appExperience)
+      ? parsed.appExperience
+      : DEFAULT_APP_EXPERIENCE,
     projectExpandedById,
     projectOrder,
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
@@ -201,6 +212,7 @@ export function persistState(state: UiState): void {
     window.localStorage.setItem(
       PERSISTED_STATE_KEY,
       JSON.stringify({
+        appExperience: state.appExperience,
         projectExpandedById,
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
@@ -382,6 +394,7 @@ export function reorderProjects(
 }
 
 interface UiStateStore extends UiState {
+  setAppExperience: (experience: AppExperience) => void;
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
@@ -396,6 +409,7 @@ interface UiStateStore extends UiState {
 
 export const useUiStateStore = create<UiStateStore>((set) => ({
   ...readPersistedState(),
+  setAppExperience: (appExperience) => set({ appExperience }),
   markThreadVisited: (threadId, visitedAt) =>
     set((state) => markThreadVisited(state, threadId, visitedAt)),
   markThreadUnread: (threadId, latestTurnCompletedAt) =>
