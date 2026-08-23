@@ -110,6 +110,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as AutomationService from "./automation/AutomationService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -486,6 +487,7 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
+      const automations = yield* AutomationService.AutomationService;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1117,6 +1119,11 @@ const makeWsRpcLayer = (
           shellResumeCompletionMarker: true,
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
+          automationCapabilities: {
+            schedules: ["once", "interval", "cron"] as const,
+            destinations: ["same-thread", "new-thread"] as const,
+            remoteScheduling: process.env.T3_AUTOMATIONS_COORDINATOR_URL !== undefined,
+          },
         };
       });
 
@@ -1126,6 +1133,50 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.automationsList]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsList,
+            automations.list(input).pipe(Effect.map((items) => ({ automations: items }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsGet]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsGet, automations.get(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsCreate]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsCreate, automations.create(input), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsUpdate]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsUpdate, automations.update(input), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsDelete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsDelete,
+            automations.remove(input.automationId).pipe(Effect.as({})),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsPause]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsPause, automations.pause(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsResume]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsResume, automations.resume(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsRunNow]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsRunNow, automations.runNow(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsListRuns]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsListRuns,
+            automations
+              .listRuns(input.automationId, input.limit)
+              .pipe(Effect.map((runs) => ({ runs }))),
+            { "rpc.aggregate": "automations" },
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,

@@ -8,6 +8,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 
 - [Project and workspace](#project-and-workspace)
 - [Thread timeline](#thread-timeline)
+- [Automations](#automations)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
 - [Checkpointing](#checkpointing)
@@ -50,6 +51,24 @@ A single user-to-assistant work cycle inside a thread. It starts with user input
 #### Activity
 
 A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
+
+### Automations
+
+#### Automation
+
+A durable, project-scoped scheduled prompt. An automation stores its schedule, destination, and a snapshot of the provider and workspace settings used for unattended runs. It is either active or paused. The prompt and execution settings stay with the T3 environment that owns the project. See [the automation contracts][26].
+
+#### Automation occurrence
+
+One logical scheduled time for an automation. Its occurrence key makes dispatch idempotent: retrying the same occurrence does not create another run. When an environment has been offline, overdue occurrences are coalesced into one late run instead of replaying every missed time.
+
+#### Automation run
+
+The durable record of an attempted occurrence, including its scheduled time, destination thread, status, and failure reason. An active run prevents another occurrence of the same automation from starting. The user-facing history keeps the latest 100 runs. See [the automation contracts][26].
+
+#### Schedule mirror
+
+The minimum timing record copied to an external coordinator when the T3 environment cannot remain running. It contains the automation identity, revision, enabled state, schedule, and next run time, but not the prompt. The coordinator wakes the environment and dispatches the occurrence back to T3 with the same occurrence key.
 
 ### Orchestration
 
@@ -189,3 +208,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
 [25]: ../../apps/server/src/orchestration/StandaloneProject.ts
+[26]: ../../packages/contracts/src/automation.ts

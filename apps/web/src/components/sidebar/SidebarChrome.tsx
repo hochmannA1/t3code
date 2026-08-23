@@ -1,6 +1,7 @@
 import {
   ArrowLeftIcon,
   BellIcon,
+  CalendarClockIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
   SettingsIcon,
@@ -210,17 +211,22 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) =>
       /^\/settings(?:\/|$)/.test(location.pathname)
         ? "settings"
-        : location.pathname === "/usage"
-          ? "usage"
-          : location.pathname === "/pull-requests"
-            ? "pull-requests"
-            : null,
+        : location.pathname === "/automations"
+          ? "automations"
+          : location.pathname === "/usage"
+            ? "usage"
+            : location.pathname === "/pull-requests"
+              ? "pull-requests"
+              : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
   // the link to lead somewhere.
   const pullRequestsSupported = environments.some(
     (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+  );
+  const automationsSupported = environments.some(
+    (environment) => environment.serverConfig?.automationCapabilities !== undefined,
   );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
@@ -242,6 +248,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     }
     void navigate({ to: "/usage" });
   }, [isMobile, navigate, setOpenMobile]);
+
+  const handleAutomationsClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/automations", search: {} });
+  }, [closeMobileSidebar, navigate]);
 
   const handleBackClick = useCallback(() => {
     closeMobileSidebar();
@@ -268,6 +279,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
+          {automationsSupported ? (
+            <SidebarUtilityItem
+              icon={<CalendarClockIcon />}
+              label="Automations"
+              onClick={handleAutomationsClick}
+            />
+          ) : null}
           {appExperience === "code" && pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<GitPullRequestIcon />}

@@ -21,6 +21,18 @@ Do not switch to global browser skills, Chrome, Node REPL browser automation, st
 const browserToolInstructions = (browserToolsAvailable: boolean): string =>
   browserToolsAvailable ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "";
 
+const T3_CODE_AUTOMATION_TOOL_INSTRUCTIONS = `
+
+## T3 Code automations
+
+You are running inside T3 Code. When the \`t3-code\` MCP server exposes \`automation_*\` tools, use them to list, inspect, create, update, pause, resume, delete, or run scheduled prompt automations for the current project.
+
+When the user explicitly asks to create or change an automation, carry out that request with the automation tools. When you identify a potentially useful automation without an explicit request, create only a disabled suggestion that the user can accept or dismiss. Never claim an automation changed until the tool confirms it.
+`;
+
+const automationToolInstructions = (automationToolsAvailable: boolean): string =>
+  automationToolsAvailable ? T3_CODE_AUTOMATION_TOOL_INSTRUCTIONS : "";
+
 const T3_WORK_RESPONSE_PROFILE_INSTRUCTIONS = `
 
 <response_profile>
@@ -199,12 +211,13 @@ export function buildCodexDeveloperInstructions(
    */
   browserToolsAvailable = true,
   responseProfile?: ResponseProfile,
+  automationToolsAvailable = false,
 ): string {
   const base =
     interactionMode === "plan"
       ? codexPlanModeDeveloperInstructions(browserToolsAvailable)
       : codexDefaultModeDeveloperInstructions(browserToolsAvailable);
-  return `${base}${responseProfileInstructions(responseProfile)}
+  return `${base}${responseProfileInstructions(responseProfile)}${automationToolInstructions(automationToolsAvailable)}
 
 <runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
 }

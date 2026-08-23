@@ -479,9 +479,14 @@ export function createServerEnvironmentAtoms<R, E>(
   },
 ) {
   const configScheduler = createAtomCommandScheduler();
+  const automationScheduler = createAtomCommandScheduler();
   // Updates stay serial end-to-end, but only their handoff phase occupies the config lane.
   const updateScheduler = createAtomCommandScheduler();
   const configConcurrency = {
+    mode: "serial" as const,
+    key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
+  };
+  const automationConcurrency = {
     mode: "serial" as const,
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   };
@@ -727,6 +732,57 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:usage-summary",
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
+    }),
+    automationsList: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:automations:list",
+      tag: WS_METHODS.automationsList,
+      staleTimeMs: 0,
+    }),
+    automationsGet: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:automations:get",
+      tag: WS_METHODS.automationsGet,
+      staleTimeMs: 0,
+    }),
+    automationsListRuns: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:automations:list-runs",
+      tag: WS_METHODS.automationsListRuns,
+      staleTimeMs: 0,
+    }),
+    automationsCreate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:automations:create",
+      tag: WS_METHODS.automationsCreate,
+      scheduler: automationScheduler,
+      concurrency: automationConcurrency,
+    }),
+    automationsUpdate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:automations:update",
+      tag: WS_METHODS.automationsUpdate,
+      scheduler: automationScheduler,
+      concurrency: automationConcurrency,
+    }),
+    automationsDelete: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:automations:delete",
+      tag: WS_METHODS.automationsDelete,
+      scheduler: automationScheduler,
+      concurrency: automationConcurrency,
+    }),
+    automationsPause: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:automations:pause",
+      tag: WS_METHODS.automationsPause,
+      scheduler: automationScheduler,
+      concurrency: automationConcurrency,
+    }),
+    automationsResume: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:automations:resume",
+      tag: WS_METHODS.automationsResume,
+      scheduler: automationScheduler,
+      concurrency: automationConcurrency,
+    }),
+    automationsRunNow: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:automations:run-now",
+      tag: WS_METHODS.automationsRunNow,
+      scheduler: automationScheduler,
+      concurrency: automationConcurrency,
     }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {

@@ -36,6 +36,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  CalendarClockIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -1686,6 +1687,51 @@ function OpenCommandPaletteDialog(props: {
       keepOpen: true,
       run: async () => {
         await startAddProjectBrowse(wslAddProjectEnvironmentOption.environmentId);
+      },
+    });
+  }
+
+  const automationsSupported = environments.some(
+    (environment) => environment.serverConfig?.automationCapabilities !== undefined,
+  );
+  if (automationsSupported) {
+    actionItems.push({
+      kind: "action",
+      value: "action:automations",
+      searchTerms: ["automations", "scheduled prompts", "recurring tasks", "cron"],
+      title: "Open automations",
+      icon: <CalendarClockIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/automations", search: {} });
+      },
+    });
+  }
+
+  const activeThreadSupportsAutomations =
+    activeThread != null &&
+    environments.some(
+      (environment) =>
+        environment.environmentId === activeThread.environmentId &&
+        environment.serverConfig?.automationCapabilities !== undefined,
+    );
+  if (activeThread && activeThreadSupportsAutomations) {
+    actionItems.push({
+      kind: "action",
+      value: "action:automations:create-for-current-thread",
+      searchTerms: ["schedule", "automate", "repeat", "current task", "current thread"],
+      title: appExperience === "work" ? "Schedule this task" : "Schedule this thread",
+      description: activeThread.title,
+      icon: <CalendarClockIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/automations",
+          search: {
+            create: true,
+            environmentId: activeThread.environmentId,
+            projectId: activeThread.projectId,
+            threadId: activeThread.id,
+          },
+        });
       },
     });
   }

@@ -21,6 +21,7 @@ import { EditorId, RemoteOpenTarget } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerSettings } from "./settings.ts";
+import { AutomationCapabilities } from "./automation.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -446,6 +447,8 @@ export const ServerConfig = Schema.Struct({
    * fields to servers that don't advertise this.
    */
   threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
+  /** Scheduled prompt automation support. Absent on older servers. */
+  automationCapabilities: Schema.optionalKey(AutomationCapabilities),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

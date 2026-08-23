@@ -18,6 +18,23 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
+describe("ServerSettings agent tools", () => {
+  it("defaults browser and automation access on independently", () => {
+    const settings = decodeServerSettings({});
+
+    expect(settings.enableAgentBrowserAccess).toBe(true);
+    expect(settings.enableAgentAutomationAccess).toBe(true);
+  });
+
+  it("accepts independent automation access patches", () => {
+    const patch = decodeServerSettingsPatch({
+      enableAgentAutomationAccess: false,
+    });
+
+    expect(patch.enableAgentAutomationAccess).toBe(false);
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);
