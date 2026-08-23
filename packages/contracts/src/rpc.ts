@@ -2,6 +2,20 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
+import {
+  Automation,
+  AutomationCreateInput,
+  AutomationDeleteResult,
+  AutomationError,
+  AutomationIdInput,
+  AutomationListInput,
+  AutomationListResult,
+  AutomationListRunsInput,
+  AutomationListRunsResult,
+  AutomationRun,
+  AutomationUpdateInput,
+} from "./automation.ts";
+
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   AuthAccessStreamError,
@@ -195,6 +209,17 @@ import {
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
+  // Scheduled prompt automations
+  automationsList: "automations.list",
+  automationsGet: "automations.get",
+  automationsCreate: "automations.create",
+  automationsUpdate: "automations.update",
+  automationsDelete: "automations.delete",
+  automationsPause: "automations.pause",
+  automationsResume: "automations.resume",
+  automationsRunNow: "automations.runNow",
+  automationsListRuns: "automations.listRuns",
+
   // Project registry methods
   projectsList: "projects.list",
   projectsAdd: "projects.add",
@@ -334,6 +359,62 @@ export const WsServerProbeRpc = Rpc.make(WS_METHODS.serverProbe, {
   payload: Schema.Struct({}),
   success: Schema.Struct({}),
   error: EnvironmentAuthorizationError,
+});
+
+const AutomationRpcError = Schema.Union([AutomationError, EnvironmentAuthorizationError]);
+
+export const WsAutomationsListRpc = Rpc.make(WS_METHODS.automationsList, {
+  payload: AutomationListInput,
+  success: AutomationListResult,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsGetRpc = Rpc.make(WS_METHODS.automationsGet, {
+  payload: AutomationIdInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsCreateRpc = Rpc.make(WS_METHODS.automationsCreate, {
+  payload: AutomationCreateInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsUpdateRpc = Rpc.make(WS_METHODS.automationsUpdate, {
+  payload: AutomationUpdateInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsDeleteRpc = Rpc.make(WS_METHODS.automationsDelete, {
+  payload: AutomationIdInput,
+  success: AutomationDeleteResult,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsPauseRpc = Rpc.make(WS_METHODS.automationsPause, {
+  payload: AutomationIdInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsResumeRpc = Rpc.make(WS_METHODS.automationsResume, {
+  payload: AutomationIdInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsRunNowRpc = Rpc.make(WS_METHODS.automationsRunNow, {
+  payload: AutomationIdInput,
+  success: AutomationRun,
+  error: AutomationRpcError,
+});
+
+export const WsAutomationsListRunsRpc = Rpc.make(WS_METHODS.automationsListRuns, {
+  payload: AutomationListRunsInput,
+  success: AutomationListRunsResult,
+  error: AutomationRpcError,
 });
 
 export const WsServerGetConfigRpc = Rpc.make(WS_METHODS.serverGetConfig, {
@@ -1011,6 +1092,15 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
 });
 
 export const WsRpcGroup = RpcGroup.make(
+  WsAutomationsListRpc,
+  WsAutomationsGetRpc,
+  WsAutomationsCreateRpc,
+  WsAutomationsUpdateRpc,
+  WsAutomationsDeleteRpc,
+  WsAutomationsPauseRpc,
+  WsAutomationsResumeRpc,
+  WsAutomationsRunNowRpc,
+  WsAutomationsListRunsRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

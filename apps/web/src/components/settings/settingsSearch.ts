@@ -210,6 +210,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "browser",
   },
   {
+    id: "agent-automation-access",
+    title: "Let agents manage automations",
+    to: "/settings/integrations",
+    targetId: "automations",
+  },
+  {
     id: "browser-default-viewport",
     title: "Default browser viewport",
     to: "/settings/integrations",

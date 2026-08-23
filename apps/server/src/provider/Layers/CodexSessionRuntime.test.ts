@@ -374,6 +374,32 @@ describe("T3 browser developer instructions", () => {
   });
 });
 
+describe("T3 automation developer instructions", () => {
+  it("describes automation tools only when that capability is attached", () => {
+    const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+    const withAutomations = buildCodexDeveloperInstructions(
+      "default",
+      runtime,
+      false,
+      undefined,
+      true,
+    );
+    const withoutAutomations = buildCodexDeveloperInstructions(
+      "default",
+      runtime,
+      true,
+      undefined,
+      false,
+    );
+
+    NodeAssert.match(withAutomations, /T3 Code automations/);
+    NodeAssert.match(withAutomations, /automation_\*/);
+    NodeAssert.doesNotMatch(withAutomations, /preview_open/);
+    NodeAssert.doesNotMatch(withoutAutomations, /T3 Code automations/);
+    NodeAssert.match(withoutAutomations, /preview_open/);
+  });
+});
+
 describe("hasConfiguredMcpServer", () => {
   it("detects inline Codex MCP configuration arguments", () => {
     NodeAssert.equal(hasConfiguredMcpServer(undefined), false);

@@ -108,6 +108,8 @@ export interface CodexSessionRuntimeOptions {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
+  readonly browserToolsAvailable?: boolean;
+  readonly automationToolsAvailable?: boolean;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -344,6 +346,7 @@ function buildCodexCollaborationMode(input: {
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly responseProfile?: ResponseProfile;
   readonly browserToolsAvailable?: boolean;
+  readonly automationToolsAvailable?: boolean;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
     return undefined;
@@ -360,6 +363,7 @@ function buildCodexCollaborationMode(input: {
         { model, reasoningEffort },
         input.browserToolsAvailable ?? true,
         input.responseProfile,
+        input.automationToolsAvailable ?? false,
       ),
     },
   };
@@ -380,6 +384,8 @@ export function buildTurnStartParams(input: {
   readonly responseProfile?: ResponseProfile;
   /** Defaults to true so callers that predate the agent-access gate are unchanged. */
   readonly browserToolsAvailable?: boolean;
+  /** Defaults to false because automation tools are new and capability-gated. */
+  readonly automationToolsAvailable?: boolean;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
@@ -402,6 +408,7 @@ export function buildTurnStartParams(input: {
     ...(input.effort ? { effort: input.effort } : {}),
     ...(input.responseProfile ? { responseProfile: input.responseProfile } : {}),
     browserToolsAvailable: input.browserToolsAvailable ?? true,
+    automationToolsAvailable: input.automationToolsAvailable ?? false,
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
@@ -1837,7 +1844,9 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            browserToolsAvailable:
+              options.browserToolsAvailable ?? hasConfiguredMcpServer(options.appServerArgs),
+            automationToolsAvailable: options.automationToolsAvailable ?? false,
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

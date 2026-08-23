@@ -108,6 +108,10 @@ import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts
 import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinary.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as AutomationService from "./automation/AutomationService.ts";
+import * as AutomationStore from "./automation/AutomationStore.ts";
+import * as AutomationMirror from "./automation/AutomationMirror.ts";
+import { automationInternalRouteLayer } from "./automation/http.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import {
   clearPersistedServerRuntimeState,
@@ -265,6 +269,48 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 );
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
+
+const AutomationStoreLayerLive = AutomationStore.layer;
+
+const AutomationLayerLive = AutomationService.layer.pipe(Layer.provide(AutomationStoreLayerLive));
+
+const AutomationMirrorLayerLive = AutomationMirror.layer.pipe(
+  Layer.provide(AutomationStoreLayerLive),
+);
+
+const AutomationServicesLive = Layer.mergeAll(AutomationLayerLive, AutomationMirrorLayerLive);
+
+const AutomationWorkerLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const automations = yield* AutomationService.AutomationService;
+    const mirror = yield* AutomationMirror.AutomationMirror;
+    const tick = Effect.all(
+      [
+        automations
+          .tick()
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Scheduled prompt automation tick failed", { cause }),
+            ),
+          ),
+        mirror
+          .flush()
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Scheduled prompt automation mirror delivery failed", { cause }),
+            ),
+          ),
+      ],
+      { concurrency: 2, discard: true },
+    );
+    yield* tick.pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.forkScoped);
+  }),
+);
+
+const AutomationRuntimeLive = Layer.mergeAll(
+  AutomationServicesLive,
+  AutomationWorkerLive.pipe(Layer.provide(AutomationServicesLive)),
+);
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
@@ -458,6 +504,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     assetRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
+    automationInternalRouteLayer,
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(
@@ -470,7 +517,6 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(browserApiCorsLayer),
   Layer.provide(httpCompressionLayer),
 );
-
 export const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -647,6 +693,9 @@ export const makeServerLayer = Layer.unwrap(
       }),
     );
 
+    const runtimeDependenciesWithAutomationLive = AutomationRuntimeLive.pipe(
+      Layer.provideMerge(RuntimeDependenciesLive),
+    );
     const runtimeServicesLive = ServerRuntimeStartup.layerWithOptions({
       activate: Deferred.succeed(activation, undefined).pipe(Effect.asVoid),
       abort: (error) => Deferred.die(activation, error).pipe(Effect.asVoid),
@@ -659,7 +708,10 @@ export const makeServerLayer = Layer.unwrap(
         ],
         { concurrency: "unbounded" },
       ).pipe(Effect.asVoid),
-    }).pipe(Layer.provideMerge(RuntimeDependenciesLive), Layer.provide(launcherLayer));
+    }).pipe(
+      Layer.provideMerge(runtimeDependenciesWithAutomationLive),
+      Layer.provide(launcherLayer),
+    );
 
     const routesLayer = HttpRouter.serve(makeRoutesLayer.pipe(Layer.provide(launcherLayer)), {
       disableLogger: !config.logWebSocketEvents,
