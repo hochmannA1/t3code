@@ -13,12 +13,14 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   AlertCircleIcon,
   CalendarClockIcon,
   CheckCircle2Icon,
+  ChevronDownIcon,
   Clock3Icon,
   ExternalLinkIcon,
   LoaderCircleIcon,
@@ -30,12 +32,14 @@ import {
   RefreshCwIcon,
   SearchIcon,
   ShieldCheckIcon,
+  SlidersHorizontalIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { isElectron } from "../../env";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { cn } from "../../lib/utils";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import {
@@ -49,6 +53,8 @@ import { useEnvironmentQuery } from "../../state/query";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { readLocalApi } from "../../localApi";
+import { useComposerDraftStore } from "../../composerDraftStore";
+import { openCommandPalette } from "../../commandPaletteBus";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
@@ -71,6 +77,7 @@ import { SidebarInset } from "../ui/sidebar";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
+import { AUTOMATION_CHAT_STARTER_PROMPT } from "./automationCreation";
 import {
   automationCanResume,
   automationNextRunLabel,
@@ -104,6 +111,51 @@ function mutationError(title: string, error: unknown) {
       title,
       description: error instanceof Error ? error.message : "The automation request failed.",
     }),
+  );
+}
+
+function AutomationCreateActions(props: {
+  readonly compact?: boolean;
+  readonly disabled: boolean;
+  readonly openingChat: boolean;
+  readonly onCreateWithAgent: () => void;
+  readonly onCreateManually: () => void;
+}) {
+  const buttonSize = props.compact ? "sm" : "default";
+  const menuButtonSize = props.compact ? "icon-sm" : "icon";
+
+  return (
+    <div className="inline-flex items-center">
+      <Button
+        size={buttonSize}
+        className="rounded-r-none"
+        disabled={props.disabled || props.openingChat}
+        onClick={props.onCreateWithAgent}
+      >
+        <PlusIcon />
+        {props.openingChat ? "Opening task..." : "New automation"}
+      </Button>
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button
+              size={menuButtonSize}
+              className="rounded-l-none border-l-primary-foreground/20 px-1.5"
+              aria-label="Automation creation options"
+              disabled={props.disabled || props.openingChat}
+            />
+          }
+        >
+          <ChevronDownIcon className="size-3.5" />
+        </MenuTrigger>
+        <MenuPopup align="end">
+          <MenuItem onClick={props.onCreateManually}>
+            <SlidersHorizontalIcon />
+            Set up manually
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
+    </div>
   );
 }
 
@@ -145,6 +197,7 @@ function dateTimeLabel(value: string): string {
 
 export function AutomationsPage({ search: routeSearch }: AutomationsPageProps) {
   const navigate = useNavigate();
+  const openNewThread = useNewThreadHandler();
   const activeEnvironmentId = useActiveEnvironmentId();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentId = routeSearch.environmentId ?? activeEnvironmentId ?? primaryEnvironmentId;
@@ -185,6 +238,7 @@ export function AutomationsPage({ search: routeSearch }: AutomationsPageProps) {
   const [selectedId, setSelectedId] = useState<AutomationId | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
+  const [openingChat, setOpeningChat] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastSeen, setLastSeen] = useLocalStorage(LAST_SEEN_KEY, {}, LAST_SEEN_SCHEMA);
@@ -397,8 +451,34 @@ export function AutomationsPage({ search: routeSearch }: AutomationsPageProps) {
   };
 
   const openCreate = () => {
+    if (projects.length === 0) {
+      openCommandPalette({ open: "add-project" });
+      return;
+    }
     setEditingAutomation(null);
     setEditorOpen(true);
+  };
+  const createWithAgent = async () => {
+    const project =
+      projects.find((candidate) => candidate.id === routeSearch.projectId) ?? projects[0] ?? null;
+    if (!project) {
+      openCommandPalette({ open: "add-project" });
+      return;
+    }
+    if (openingChat) return;
+    setOpeningChat(true);
+    try {
+      const draft = await openNewThread(scopeProjectRef(project.environmentId, project.id));
+      if (!draft) {
+        mutationError("Could not open a task", new Error("The project is not available."));
+        return;
+      }
+      useComposerDraftStore.getState().setPrompt(draft.draftId, AUTOMATION_CHAT_STARTER_PROMPT);
+    } catch (error) {
+      mutationError("Could not open a task", error);
+    } finally {
+      setOpeningChat(false);
+    }
   };
   const openEdit = (automation: Automation) => {
     setEditingAutomation(automation);
@@ -430,10 +510,13 @@ export function AutomationsPage({ search: routeSearch }: AutomationsPageProps) {
         >
           <RefreshCwIcon />
         </Button>
-        <Button size="sm" onClick={openCreate} disabled={!capabilities || projects.length === 0}>
-          <PlusIcon />
-          New automation
-        </Button>
+        <AutomationCreateActions
+          compact
+          disabled={!capabilities}
+          openingChat={openingChat}
+          onCreateWithAgent={() => void createWithAgent()}
+          onCreateManually={openCreate}
+        />
       </div>
     </div>
   );
@@ -464,15 +547,28 @@ export function AutomationsPage({ search: routeSearch }: AutomationsPageProps) {
               <div className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">
                 Loading automations...
               </div>
+            ) : projects.length === 0 ? (
+              <AutomationEmptyState
+                title="Create a project first"
+                description="Automations need a project so the agent knows where to work. Create one before setting up an automation."
+                action={
+                  <Button onClick={() => openCommandPalette({ open: "add-project" })}>
+                    <PlusIcon />
+                    Create project
+                  </Button>
+                }
+              />
             ) : automations.length === 0 ? (
               <AutomationEmptyState
                 title="Run prompts on a schedule"
                 description="Create an automation for daily checks, recurring project work, or a one-time reminder."
                 action={
-                  <Button onClick={openCreate} disabled={projects.length === 0}>
-                    <PlusIcon />
-                    New automation
-                  </Button>
+                  <AutomationCreateActions
+                    disabled={false}
+                    openingChat={openingChat}
+                    onCreateWithAgent={() => void createWithAgent()}
+                    onCreateManually={openCreate}
+                  />
                 }
               />
             ) : (

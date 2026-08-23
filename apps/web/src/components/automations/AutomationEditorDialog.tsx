@@ -10,7 +10,7 @@ import type {
 } from "@t3tools/contracts";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { ChevronDownIcon, ShieldCheckIcon } from "lucide-react";
+import { ChevronDownIcon, SparklesIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { Project, ThreadShell } from "../../types";
@@ -29,9 +29,12 @@ import {
   createWorkModelSelection,
   DEFAULT_WORK_COMPLEXITY,
   resolveWorkCodexInstance,
+  resolveWorkComplexity,
+  type WorkComplexity,
 } from "../../workExperience";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { WorkComplexityControl } from "../work/WorkComplexityControl";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
@@ -43,7 +46,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { Field, FieldDescription, FieldError, FieldLabel } from "../ui/field";
+import { Field, FieldDescription, FieldLabel } from "../ui/field";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
@@ -54,6 +57,11 @@ import {
   type AutomationScheduleChoice,
   type AutomationScheduleDraft,
 } from "./automationPresentation";
+import {
+  AUTOMATION_PROMPT_STARTERS,
+  automationNameFromPrompt,
+  automationTimezones,
+} from "./automationCreation";
 
 interface AutomationEditorValue {
   readonly create: AutomationCreateInput;
@@ -93,12 +101,6 @@ const WEEKDAYS = [
   ["6", "Saturday"],
   ["0", "Sunday"],
 ] as const;
-
-function fieldClass(selected: boolean): string {
-  return selected
-    ? "border-primary/50 bg-primary/6 text-foreground ring-1 ring-primary/20"
-    : "border-border/70 bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground";
-}
 
 function updateScheduleDraft<K extends keyof AutomationScheduleDraft>(
   draft: AutomationScheduleDraft,
@@ -144,11 +146,17 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
     () => resolveAppModelSelectionState(settings, providers),
     [providers, settings],
   );
-  const workFallbackModelSelection = useMemo(() => {
-    if (appExperience !== "work") return null;
-    const instance = resolveWorkCodexInstance(entries, fallbackModelSelection.instanceId);
-    return instance ? createWorkModelSelection(DEFAULT_WORK_COMPLEXITY, instance.instanceId) : null;
-  }, [appExperience, entries, fallbackModelSelection.instanceId]);
+  const workCodexEntry = useMemo(
+    () => resolveWorkCodexInstance(entries, fallbackModelSelection.instanceId),
+    [entries, fallbackModelSelection.instanceId],
+  );
+  const workFallbackModelSelection = useMemo(
+    () =>
+      appExperience === "work" && workCodexEntry
+        ? createWorkModelSelection(DEFAULT_WORK_COMPLEXITY, workCodexEntry.instanceId)
+        : null,
+    [appExperience, workCodexEntry],
+  );
 
   const fallbackProject =
     props.projects.find((project) => project.id === props.initialProjectId) ??
@@ -165,6 +173,7 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
   const [targetThreadId, setTargetThreadId] = useState<ThreadId | null>(initialThread?.id ?? null);
   const [workspaceThreadId, setWorkspaceThreadId] = useState<ThreadId | null>(null);
   const [schedule, setSchedule] = useState(() => defaultAutomationScheduleDraft());
+  const timezones = useMemo(() => automationTimezones(schedule.timezone), [schedule.timezone]);
   const [modelSelection, setModelSelection] = useState<ModelSelection>(() =>
     initialSelection({
       automation: props.automation,
@@ -258,6 +267,9 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
     workspaceThreads.find((thread) => thread.id === workspaceThreadId) ?? null;
   const activeEntry =
     entries.find((entry) => entry.instanceId === modelSelection.instanceId) ?? null;
+  const workComplexity = workCodexEntry
+    ? (resolveWorkComplexity(modelSelection, workCodexEntry.instanceId) ?? DEFAULT_WORK_COMPLEXITY)
+    : DEFAULT_WORK_COMPLEXITY;
 
   const selectProject = (nextProjectId: ProjectId) => {
     const project = props.projects.find((candidate) => candidate.id === nextProjectId) ?? null;
@@ -266,6 +278,7 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
     );
     setProjectId(nextProjectId);
     setTargetThreadId(firstThread?.id ?? null);
+    if (!firstThread) setDestinationKind("new-thread");
     setWorkspaceThreadId(null);
     const nextSelection = resolveDefaultProviderModelSelection(
       providers,
@@ -274,13 +287,19 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
     if (nextSelection) setModelSelection(nextSelection);
   };
 
+  const selectPromptStarter = (starter: (typeof AUTOMATION_PROMPT_STARTERS)[number]) => {
+    setPrompt(starter.prompt);
+    if (!name.trim()) setName(starter.name);
+  };
+
+  const selectWorkComplexity = (complexity: WorkComplexity) => {
+    if (!workCodexEntry) return;
+    setModelSelection(createWorkModelSelection(complexity, workCodexEntry.instanceId));
+  };
+
   const submit = () => {
-    const trimmedName = name.trim();
     const trimmedPrompt = prompt.trim();
-    if (!trimmedName) {
-      setError("Give this automation a name.");
-      return;
-    }
+    const trimmedName = name.trim() || automationNameFromPrompt(trimmedPrompt);
     if (!trimmedPrompt) {
       setError("Write the prompt the agent should run.");
       return;
@@ -304,6 +323,7 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
     }
 
     const workspace = destinationKind === "same-thread" ? targetThread : workspaceThread;
+    const preserveHiddenWorkspace = appExperience === "work" && props.automation !== null;
     const destination =
       destinationKind === "same-thread"
         ? ({ kind: "same-thread", threadId: targetThread!.id } as const)
@@ -312,10 +332,14 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
       modelSelection,
       runtimeMode: "full-access" as const,
       approvalPolicy: "never" as const,
-      interactionMode,
+      interactionMode: appExperience === "work" ? ("default" as const) : interactionMode,
       responseProfile: props.automation?.execution.responseProfile ?? appExperience,
-      branch: workspace?.branch ?? null,
-      worktreePath: workspace?.worktreePath ?? null,
+      branch:
+        workspace?.branch ??
+        (preserveHiddenWorkspace ? (props.automation?.execution.branch ?? null) : null),
+      worktreePath:
+        workspace?.worktreePath ??
+        (preserveHiddenWorkspace ? (props.automation?.execution.worktreePath ?? null) : null),
     };
     props.onSave({
       create: {
@@ -339,392 +363,454 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogPopup className="w-[min(46rem,calc(100vw-2rem))] max-w-none">
+      <DialogPopup className="w-[min(64rem,calc(100vw-2rem))] max-w-none">
         <DialogHeader>
           <DialogTitle>{props.automation ? "Edit automation" : "New automation"}</DialogTitle>
           <DialogDescription>
-            T3 Code will send this prompt on schedule, even when you are not watching the task.
+            Describe the recurring work. The settings on the right control when and where it runs.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="flex flex-col gap-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field className="sm:col-span-2">
-              <FieldLabel>Name</FieldLabel>
-              <Input
-                value={name}
-                onChange={(event) => setName(event.currentTarget.value)}
-                placeholder="Morning project check"
-                autoFocus
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel>Project</FieldLabel>
-              <Select
-                value={projectId ?? undefined}
-                disabled={props.automation !== null}
-                onValueChange={(value) => {
-                  if (value) selectProject(value as ProjectId);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue>{selectedProject?.title ?? "Choose a project"}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup alignItemWithTrigger={false}>
-                  {props.projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.title}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </Field>
-
-            <Field>
-              <FieldLabel>Agent mode</FieldLabel>
-              <Select
-                value={interactionMode}
-                onValueChange={(value) => {
-                  if (value === "default" || value === "plan") setInteractionMode(value);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue>
-                    {interactionMode === "plan" ? "Make a plan" : "Work on the task"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup alignItemWithTrigger={false}>
-                  <SelectItem value="default">Work on the task</SelectItem>
-                  <SelectItem value="plan">Make a plan</SelectItem>
-                </SelectPopup>
-              </Select>
-            </Field>
-          </div>
-
-          <Field>
-            <FieldLabel>Prompt</FieldLabel>
-            <Textarea
-              value={prompt}
-              onChange={(event) => setPrompt(event.currentTarget.value)}
-              placeholder="Check the latest project state and summarize what needs attention."
-              className="min-h-28"
-            />
-            <FieldDescription>This is sent to the agent exactly as written.</FieldDescription>
-          </Field>
-
-          <fieldset className="flex flex-col gap-3">
-            <legend className="text-sm font-medium text-foreground">When it runs</legend>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-              {FRIENDLY_SCHEDULES.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`min-h-10 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${fieldClass(schedule.choice === option.value)}`}
-                  onClick={() => setSchedule(updateScheduleDraft(schedule, "choice", option.value))}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-
-            {schedule.choice === "once" ? (
+        <DialogPanel className="flex flex-col gap-5">
+          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(17rem,0.85fr)]">
+            <section className="min-w-0">
               <Field>
-                <FieldLabel>Date and time</FieldLabel>
-                <Input
-                  nativeInput
-                  type="datetime-local"
-                  value={schedule.onceAt}
-                  onChange={(event) =>
-                    setSchedule(updateScheduleDraft(schedule, "onceAt", event.currentTarget.value))
-                  }
+                <FieldLabel>What should happen?</FieldLabel>
+                <Textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.currentTarget.value)}
+                  placeholder="Review the latest project state and tell me what needs attention."
+                  className="min-h-64 resize-y text-base leading-relaxed"
+                  autoFocus
                 />
+                <FieldDescription>
+                  Write the instructions exactly as the agent should receive them.
+                </FieldDescription>
               </Field>
-            ) : schedule.choice === "interval" ? (
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <Field>
-                  <FieldLabel>Repeat every</FieldLabel>
-                  <div className="grid grid-cols-[1fr_9rem] gap-2">
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <SparklesIcon className="size-3.5" />
+                  Start with an example
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {AUTOMATION_PROMPT_STARTERS.map((starter) => (
+                    <button
+                      key={starter.label}
+                      type="button"
+                      className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                      onClick={() => selectPromptStarter(starter)}
+                    >
+                      {starter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <aside className="flex min-w-0 flex-col gap-4 rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <Field>
+                <FieldLabel>Project</FieldLabel>
+                <Select
+                  value={projectId ?? undefined}
+                  disabled={props.automation !== null}
+                  onValueChange={(value) => {
+                    if (value) selectProject(value as ProjectId);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue>{selectedProject?.title ?? "Choose a project"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup alignItemWithTrigger={false}>
+                    {props.projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.title}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </Field>
+
+              <fieldset className="flex flex-col gap-2">
+                <legend className="text-sm font-medium text-foreground">Schedule</legend>
+                <Select
+                  value={schedule.choice}
+                  onValueChange={(value) => {
+                    if (
+                      value === "once" ||
+                      value === "interval" ||
+                      value === "daily" ||
+                      value === "weekdays" ||
+                      value === "weekly" ||
+                      value === "custom"
+                    ) {
+                      setSchedule(updateScheduleDraft(schedule, "choice", value));
+                      if (value === "custom") setAdvancedOpen(true);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue>
+                      {schedule.choice === "custom"
+                        ? "Custom schedule"
+                        : FRIENDLY_SCHEDULES.find((option) => option.value === schedule.choice)
+                            ?.label}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup alignItemWithTrigger={false}>
+                    {FRIENDLY_SCHEDULES.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="custom">Custom schedule</SelectItem>
+                  </SelectPopup>
+                </Select>
+
+                {schedule.choice === "once" ? (
+                  <Field>
+                    <FieldLabel>Date and time</FieldLabel>
                     <Input
                       nativeInput
-                      inputMode="numeric"
-                      value={schedule.everyValue}
+                      type="datetime-local"
+                      value={schedule.onceAt}
                       onChange={(event) =>
                         setSchedule(
-                          updateScheduleDraft(schedule, "everyValue", event.currentTarget.value),
+                          updateScheduleDraft(schedule, "onceAt", event.currentTarget.value),
                         )
                       }
                     />
+                  </Field>
+                ) : schedule.choice === "interval" ? (
+                  <div className="flex flex-col gap-2">
+                    <Field>
+                      <FieldLabel>Repeat every</FieldLabel>
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,7.5rem)] gap-2">
+                        <Input
+                          nativeInput
+                          inputMode="numeric"
+                          value={schedule.everyValue}
+                          onChange={(event) =>
+                            setSchedule(
+                              updateScheduleDraft(
+                                schedule,
+                                "everyValue",
+                                event.currentTarget.value,
+                              ),
+                            )
+                          }
+                        />
+                        <Select
+                          value={schedule.everyUnit}
+                          onValueChange={(value) => {
+                            if (value === "minutes" || value === "hours" || value === "days") {
+                              setSchedule(updateScheduleDraft(schedule, "everyUnit", value));
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="min-w-0">
+                            <SelectValue>{schedule.everyUnit}</SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup alignItemWithTrigger={false}>
+                            <SelectItem value="minutes">minutes</SelectItem>
+                            <SelectItem value="hours">hours</SelectItem>
+                            <SelectItem value="days">days</SelectItem>
+                          </SelectPopup>
+                        </Select>
+                      </div>
+                    </Field>
+                  </div>
+                ) : schedule.choice !== "custom" ? (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                    {schedule.choice === "weekly" ? (
+                      <Field>
+                        <FieldLabel>Day</FieldLabel>
+                        <Select
+                          value={schedule.weekday}
+                          onValueChange={(value) => {
+                            if (value) setSchedule(updateScheduleDraft(schedule, "weekday", value));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue>
+                              {WEEKDAYS.find(([value]) => value === schedule.weekday)?.[1]}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup alignItemWithTrigger={false}>
+                            {WEEKDAYS.map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectPopup>
+                        </Select>
+                      </Field>
+                    ) : null}
+                    <Field>
+                      <FieldLabel>Time</FieldLabel>
+                      <Input
+                        nativeInput
+                        type="time"
+                        value={schedule.time}
+                        onChange={(event) =>
+                          setSchedule(
+                            updateScheduleDraft(schedule, "time", event.currentTarget.value),
+                          )
+                        }
+                      />
+                    </Field>
+                  </div>
+                ) : null}
+                {schedule.choice !== "once" && schedule.choice !== "interval" ? (
+                  <Field>
+                    <FieldLabel>Timezone</FieldLabel>
                     <Select
-                      value={schedule.everyUnit}
+                      value={schedule.timezone}
                       onValueChange={(value) => {
-                        if (value === "minutes" || value === "hours" || value === "days") {
-                          setSchedule(updateScheduleDraft(schedule, "everyUnit", value));
+                        if (value) {
+                          setSchedule(updateScheduleDraft(schedule, "timezone", value));
                         }
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue>{schedule.everyUnit}</SelectValue>
+                        <SelectValue>{schedule.timezone.replaceAll("_", " ")}</SelectValue>
                       </SelectTrigger>
                       <SelectPopup alignItemWithTrigger={false}>
-                        <SelectItem value="minutes">minutes</SelectItem>
-                        <SelectItem value="hours">hours</SelectItem>
-                        <SelectItem value="days">days</SelectItem>
-                      </SelectPopup>
-                    </Select>
-                  </div>
-                </Field>
-                <Field>
-                  <FieldLabel>Starting</FieldLabel>
-                  <Input
-                    nativeInput
-                    type="datetime-local"
-                    value={schedule.startsAt}
-                    onChange={(event) =>
-                      setSchedule(
-                        updateScheduleDraft(schedule, "startsAt", event.currentTarget.value),
-                      )
-                    }
-                  />
-                </Field>
-              </div>
-            ) : schedule.choice !== "custom" ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {schedule.choice === "weekly" ? (
-                  <Field>
-                    <FieldLabel>Day</FieldLabel>
-                    <Select
-                      value={schedule.weekday}
-                      onValueChange={(value) => {
-                        if (value) setSchedule(updateScheduleDraft(schedule, "weekday", value));
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue>
-                          {WEEKDAYS.find(([value]) => value === schedule.weekday)?.[1]}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectPopup alignItemWithTrigger={false}>
-                        {WEEKDAYS.map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
+                        {timezones.map((timezone) => (
+                          <SelectItem key={timezone} value={timezone}>
+                            {timezone.replaceAll("_", " ")}
                           </SelectItem>
                         ))}
                       </SelectPopup>
                     </Select>
                   </Field>
                 ) : null}
-                <Field>
-                  <FieldLabel>Time</FieldLabel>
-                  <Input
-                    nativeInput
-                    type="time"
-                    value={schedule.time}
-                    onChange={(event) =>
-                      setSchedule(updateScheduleDraft(schedule, "time", event.currentTarget.value))
+              </fieldset>
+
+              <Field>
+                <FieldLabel>Results</FieldLabel>
+                <Select
+                  value={destinationKind}
+                  onValueChange={(value) => {
+                    if (
+                      value === "new-thread" ||
+                      (value === "same-thread" && projectThreads.length)
+                    ) {
+                      setDestinationKind(value);
                     }
-                  />
-                </Field>
-              </div>
-            ) : null}
-
-            {schedule.choice !== "once" && schedule.choice !== "interval" ? (
-              <Field>
-                <FieldLabel>Timezone</FieldLabel>
-                <Input
-                  value={schedule.timezone}
-                  onChange={(event) =>
-                    setSchedule(
-                      updateScheduleDraft(schedule, "timezone", event.currentTarget.value),
-                    )
-                  }
-                  placeholder="Europe/Vienna"
-                />
-                <FieldDescription>Times above use this timezone.</FieldDescription>
-              </Field>
-            ) : null}
-
-            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-              <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
-                <ChevronDownIcon
-                  className={`size-3.5 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
-                />
-                Advanced
-              </CollapsibleTrigger>
-              <CollapsiblePanel>
-                <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 p-4">
-                  <button
-                    type="button"
-                    className={`mb-3 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${fieldClass(schedule.choice === "custom")}`}
-                    onClick={() => setSchedule(updateScheduleDraft(schedule, "choice", "custom"))}
-                  >
-                    Custom schedule
-                  </button>
-                  {schedule.choice === "custom" ? (
-                    <Field>
-                      <FieldLabel>Schedule expression</FieldLabel>
-                      <Input
-                        value={schedule.cronExpression}
-                        onChange={(event) =>
-                          setSchedule(
-                            updateScheduleDraft(
-                              schedule,
-                              "cronExpression",
-                              event.currentTarget.value,
-                            ),
-                          )
-                        }
-                        placeholder="0 9 * * 1-5"
-                        className="font-mono"
-                      />
-                      <FieldDescription>
-                        Uses the standard five-part minute, hour, day, month, weekday format.
-                      </FieldDescription>
-                    </Field>
-                  ) : null}
-                </div>
-              </CollapsiblePanel>
-            </Collapsible>
-          </fieldset>
-
-          <fieldset className="flex flex-col gap-3">
-            <legend className="text-sm font-medium text-foreground">Where the result goes</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                className={`rounded-xl border p-4 text-left transition-colors ${fieldClass(destinationKind === "same-thread")}`}
-                onClick={() => setDestinationKind("same-thread")}
-              >
-                <span className="block text-sm font-medium">Continue an existing task</span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Every run is added to the same task.
-                </span>
-              </button>
-              <button
-                type="button"
-                className={`rounded-xl border p-4 text-left transition-colors ${fieldClass(destinationKind === "new-thread")}`}
-                onClick={() => setDestinationKind("new-thread")}
-              >
-                <span className="block text-sm font-medium">Start a fresh task every run</span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Each result gets its own task and history.
-                </span>
-              </button>
-            </div>
-
-            {destinationKind === "same-thread" ? (
-              <Field>
-                <FieldLabel>Task</FieldLabel>
-                <Select
-                  value={targetThreadId ?? undefined}
-                  onValueChange={(value) => setTargetThreadId((value as ThreadId | null) ?? null)}
-                >
-                  <SelectTrigger>
-                    <SelectValue>{targetThread?.title ?? "Choose a task"}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup alignItemWithTrigger={false}>
-                    {projectThreads.map((thread) => (
-                      <SelectItem key={thread.id} value={thread.id}>
-                        {thread.title}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              </Field>
-            ) : (
-              <Field>
-                <FieldLabel>Workspace</FieldLabel>
-                <Select
-                  value={workspaceThreadId ?? "project"}
-                  onValueChange={(value) =>
-                    setWorkspaceThreadId(value && value !== "project" ? (value as ThreadId) : null)
-                  }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue>
-                      {workspaceThread?.worktreePath
-                        ? `Worktree from ${workspaceThread.title}`
-                        : "Project checkout"}
+                      {destinationKind === "same-thread"
+                        ? "Continue one task"
+                        : "New task each run"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectPopup alignItemWithTrigger={false}>
-                    <SelectItem value="project">Project checkout</SelectItem>
-                    {workspaceThreads.map((thread) => (
-                      <SelectItem key={thread.id} value={thread.id}>
-                        {thread.worktreePath ? "Worktree" : "Project checkout"} from {thread.title}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="new-thread">New task each run</SelectItem>
+                    {projectThreads.length > 0 ? (
+                      <SelectItem value="same-thread">Continue one task</SelectItem>
+                    ) : null}
                   </SelectPopup>
                 </Select>
-                <FieldDescription>
-                  T3 Code saves this choice instead of following future project defaults.
-                </FieldDescription>
+                {destinationKind === "same-thread" && projectThreads.length > 0 ? (
+                  <div className="mt-2">
+                    <Select
+                      value={targetThreadId ?? undefined}
+                      onValueChange={(value) =>
+                        setTargetThreadId((value as ThreadId | null) ?? null)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue>{targetThread?.title ?? "Choose a task"}</SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup alignItemWithTrigger={false}>
+                        {projectThreads.map((thread) => (
+                          <SelectItem key={thread.id} value={thread.id}>
+                            {thread.title}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  </div>
+                ) : null}
               </Field>
-            )}
-          </fieldset>
 
-          <fieldset className="flex flex-col gap-3">
-            <legend className="text-sm font-medium text-foreground">Agent</legend>
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 p-3">
-              {activeEntry ? (
-                <>
-                  <ProviderModelPicker
-                    activeInstanceId={modelSelection.instanceId}
-                    model={modelSelection.model}
-                    lockedProvider={null}
-                    instanceEntries={entries}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    triggerVariant="outline"
-                    triggerAriaLabel="Automation model"
-                    onInstanceModelChange={(instanceId, model) =>
-                      setModelSelection({
-                        instanceId,
-                        model,
-                        ...(instanceId === modelSelection.instanceId
-                          ? { options: modelSelection.options }
-                          : {}),
-                      })
-                    }
-                  />
-                  <TraitsPicker
-                    provider={activeEntry.driverKind}
-                    instanceId={activeEntry.instanceId}
-                    models={activeEntry.models}
-                    model={modelSelection.model}
-                    prompt={prompt}
-                    onPromptChange={setPrompt}
-                    modelOptions={modelSelection.options}
-                    allowPromptInjectedEffort={false}
-                    planModeEnabled={settings.planModeEnabled}
-                    triggerVariant="outline"
-                    onModelOptionsChange={(options) =>
-                      setModelSelection({
-                        instanceId: modelSelection.instanceId,
-                        model: modelSelection.model,
-                        ...(options ? { options } : {}),
-                      })
-                    }
-                  />
-                </>
+              {appExperience === "work" ? (
+                <Field>
+                  <FieldLabel>Task complexity</FieldLabel>
+                  <div className="flex h-9 items-center rounded-lg border border-input bg-popover px-2">
+                    <WorkComplexityControl
+                      value={workComplexity}
+                      onValueChange={selectWorkComplexity}
+                      disabled={!workCodexEntry}
+                      className="ms-0"
+                      aria-label="Automation task complexity"
+                    />
+                  </div>
+                </Field>
               ) : (
-                <span className="text-sm text-destructive-foreground">
-                  No available agent provider.
-                </span>
+                <Field>
+                  <FieldLabel>Agent</FieldLabel>
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-input bg-popover p-2">
+                    {activeEntry ? (
+                      <>
+                        <ProviderModelPicker
+                          activeInstanceId={modelSelection.instanceId}
+                          model={modelSelection.model}
+                          lockedProvider={null}
+                          instanceEntries={entries}
+                          modelOptionsByInstance={modelOptionsByInstance}
+                          triggerVariant="outline"
+                          triggerAriaLabel="Automation model"
+                          onInstanceModelChange={(instanceId, model) =>
+                            setModelSelection({
+                              instanceId,
+                              model,
+                              ...(instanceId === modelSelection.instanceId
+                                ? { options: modelSelection.options }
+                                : {}),
+                            })
+                          }
+                        />
+                        <TraitsPicker
+                          provider={activeEntry.driverKind}
+                          instanceId={activeEntry.instanceId}
+                          models={activeEntry.models}
+                          model={modelSelection.model}
+                          prompt={prompt}
+                          onPromptChange={setPrompt}
+                          modelOptions={modelSelection.options}
+                          allowPromptInjectedEffort={false}
+                          planModeEnabled={settings.planModeEnabled}
+                          triggerVariant="outline"
+                          onModelOptionsChange={(options) =>
+                            setModelSelection({
+                              instanceId: modelSelection.instanceId,
+                              model: modelSelection.model,
+                              ...(options ? { options } : {}),
+                            })
+                          }
+                        />
+                      </>
+                    ) : (
+                      <span className="text-sm text-destructive-foreground">
+                        No available agent provider.
+                      </span>
+                    )}
+                  </div>
+                </Field>
               )}
-            </div>
-          </fieldset>
 
-          <div className="flex items-start gap-3 rounded-xl border border-warning/25 bg-warning/6 p-4">
-            <ShieldCheckIcon className="mt-0.5 size-4 shrink-0 text-warning" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Full access, never ask</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Automations run unattended with full permissions. If an agent still asks for
-                approval, the run fails immediately. Three failed runs pause the automation.
-              </p>
-            </div>
+              <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+                <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+                  <ChevronDownIcon
+                    className={`size-3.5 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
+                  />
+                  Advanced
+                </CollapsibleTrigger>
+                <CollapsiblePanel>
+                  <div className="mt-3 flex flex-col gap-3 border-t border-border/60 pt-3">
+                    <Field>
+                      <FieldLabel>Name</FieldLabel>
+                      <Input
+                        value={name}
+                        onChange={(event) => setName(event.currentTarget.value)}
+                        placeholder={automationNameFromPrompt(prompt)}
+                      />
+                      <FieldDescription>
+                        Optional. T3 Code can derive this from the prompt.
+                      </FieldDescription>
+                    </Field>
+
+                    {schedule.choice === "custom" ? (
+                      <Field>
+                        <FieldLabel>Schedule expression</FieldLabel>
+                        <Input
+                          value={schedule.cronExpression}
+                          onChange={(event) =>
+                            setSchedule(
+                              updateScheduleDraft(
+                                schedule,
+                                "cronExpression",
+                                event.currentTarget.value,
+                              ),
+                            )
+                          }
+                          placeholder="0 9 * * 1-5"
+                          className="font-mono"
+                        />
+                        <FieldDescription>Minute, hour, day, month, weekday.</FieldDescription>
+                      </Field>
+                    ) : null}
+
+                    {appExperience !== "work" ? (
+                      <>
+                        <Field>
+                          <FieldLabel>Agent mode</FieldLabel>
+                          <Select
+                            value={interactionMode}
+                            onValueChange={(value) => {
+                              if (value === "default" || value === "plan") {
+                                setInteractionMode(value);
+                              }
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue>
+                                {interactionMode === "plan" ? "Make a plan" : "Work on the task"}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectPopup alignItemWithTrigger={false}>
+                              <SelectItem value="default">Work on the task</SelectItem>
+                              <SelectItem value="plan">Make a plan</SelectItem>
+                            </SelectPopup>
+                          </Select>
+                        </Field>
+
+                        {destinationKind === "new-thread" ? (
+                          <Field>
+                            <FieldLabel>Run in</FieldLabel>
+                            <Select
+                              value={workspaceThreadId ?? "project"}
+                              onValueChange={(value) =>
+                                setWorkspaceThreadId(
+                                  value && value !== "project" ? (value as ThreadId) : null,
+                                )
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue>
+                                  {workspaceThread?.worktreePath
+                                    ? `Existing worktree from ${workspaceThread.title}`
+                                    : "Project checkout"}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectPopup alignItemWithTrigger={false}>
+                                <SelectItem value="project">Project checkout</SelectItem>
+                                {workspaceThreads.map((thread) => (
+                                  <SelectItem key={thread.id} value={thread.id}>
+                                    {thread.worktreePath ? "Existing worktree" : "Project checkout"}{" "}
+                                    from {thread.title}
+                                  </SelectItem>
+                                ))}
+                              </SelectPopup>
+                            </Select>
+                          </Field>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </CollapsiblePanel>
+              </Collapsible>
+            </aside>
           </div>
 
-          {error ? <FieldError>{error}</FieldError> : null}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive-foreground">
+              {error}
+            </p>
+          ) : null}
         </DialogPanel>
         <DialogFooter>
           <Button variant="ghost" onClick={() => props.onOpenChange(false)} disabled={props.saving}>
