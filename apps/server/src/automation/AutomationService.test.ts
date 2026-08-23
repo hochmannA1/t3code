@@ -5,6 +5,7 @@ import {
   doesAutomationRunCompleteOneTimeSchedule,
   doesAutomationRunOwnLatestTurn,
   isAutomationThreadIdle,
+  shouldScheduleAutomationsLocally,
   unattendedRunFailureReason,
 } from "./AutomationService.ts";
 
@@ -94,5 +95,14 @@ describe("automation unattended runs", () => {
     expect(doesAutomationRunCompleteOneTimeSchedule("once", "schedule")).toBe(true);
     expect(doesAutomationRunCompleteOneTimeSchedule("once", "remote")).toBe(true);
     expect(doesAutomationRunCompleteOneTimeSchedule("cron", "manual")).toBe(false);
+  });
+
+  it("leaves scheduled occurrences to the remote coordinator when configured", () => {
+    expect(shouldScheduleAutomationsLocally(undefined)).toBe(true);
+    expect(shouldScheduleAutomationsLocally("")).toBe(true);
+    expect(shouldScheduleAutomationsLocally("   ")).toBe(true);
+    expect(shouldScheduleAutomationsLocally("https://coordinator.example/internal/tools")).toBe(
+      false,
+    );
   });
 });

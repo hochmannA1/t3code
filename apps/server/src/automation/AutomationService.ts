@@ -133,6 +133,14 @@ export function doesAutomationRunCompleteOneTimeSchedule(
   return scheduleKind === "once" && trigger !== "manual";
 }
 
+export function shouldScheduleAutomationsLocally(coordinatorUrl: string | undefined): boolean {
+  return coordinatorUrl === undefined || coordinatorUrl.trim() === "";
+}
+
+export interface AutomationTickOptions {
+  readonly scheduleLocally?: boolean;
+}
+
 export interface AutomationServiceShape {
   readonly list: (
     input: AutomationListInput,
@@ -155,7 +163,10 @@ export interface AutomationServiceShape {
   readonly getRunStatus: (
     input: AutomationRunStatusInput,
   ) => Effect.Effect<AutomationRun, AutomationError>;
-  readonly tick: (at?: string) => Effect.Effect<void, AutomationError>;
+  readonly tick: (
+    at?: string,
+    options?: AutomationTickOptions,
+  ) => Effect.Effect<void, AutomationError>;
 }
 
 export class AutomationService extends Context.Service<AutomationService, AutomationServiceShape>()(
@@ -615,9 +626,14 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  const tick = Effect.fn("AutomationService.tick")(function* (at?: string) {
+  const tick = Effect.fn("AutomationService.tick")(function* (
+    at?: string,
+    options?: AutomationTickOptions,
+  ) {
     const timestamp = at ?? (yield* nowIso);
-    yield* scheduleDue(timestamp);
+    if (options?.scheduleLocally !== false) {
+      yield* scheduleDue(timestamp);
+    }
     const runs = yield* store.listRunnable();
     for (const run of runs) {
       if (run.status === "running") {

@@ -284,10 +284,13 @@ const AutomationWorkerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const automations = yield* AutomationService.AutomationService;
     const mirror = yield* AutomationMirror.AutomationMirror;
+    const scheduleLocally = AutomationService.shouldScheduleAutomationsLocally(
+      process.env.T3_AUTOMATIONS_COORDINATOR_URL,
+    );
     const tick = Effect.all(
       [
         automations
-          .tick()
+          .tick(undefined, { scheduleLocally })
           .pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Scheduled prompt automation tick failed", { cause }),
