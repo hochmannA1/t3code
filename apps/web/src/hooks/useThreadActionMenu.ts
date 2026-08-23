@@ -79,6 +79,7 @@ export function useThreadActionMenu(input: {
     reportFailure: false,
   });
   const handleNewThread = useNewThreadHandler();
+  const appExperience = useUiStateStore((s) => s.appExperience);
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
@@ -125,6 +126,7 @@ export function useThreadActionMenu(input: {
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
         const items = buildThreadActionMenuItems({
+          workTerminology: appExperience === "work",
           branch: thread.branch ?? null,
           isPinned: thread.pinnedAt != null,
           isSettled:
@@ -204,10 +206,18 @@ export function useThreadActionMenu(input: {
             return;
           }
           case "settle":
-            await reportFailure("Failed to settle thread", () => settleThread(threadRef));
+            await reportFailure(
+              appExperience === "work" ? "Could not complete task" : "Failed to settle thread",
+              () => settleThread(threadRef),
+            );
             return;
           case "unsettle":
-            await reportFailure("Failed to un-settle thread", () => unsettleThread(threadRef));
+            await reportFailure(
+              appExperience === "work"
+                ? "Could not mark task active"
+                : "Failed to un-settle thread",
+              () => unsettleThread(threadRef),
+            );
             return;
           case "unsnooze":
             await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));
@@ -312,6 +322,7 @@ export function useThreadActionMenu(input: {
       archiveThread,
       autoSettleAfterDays,
       autoSettleOnMerge,
+      appExperience,
       changeRequest,
       confirmThreadArchive,
       confirmThreadDelete,

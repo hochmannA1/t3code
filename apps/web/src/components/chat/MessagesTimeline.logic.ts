@@ -523,8 +523,8 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
 /**
  * Settled turns normally keep their first and terminal assistant messages
  * visible. Everything between them folds behind a "Worked for ..." row
- * anchored at the first hidden entry. Work presentation narrows the fold to
- * technical work-log activity and leaves every assistant narration visible.
+ * anchored at the first hidden entry. Work presentation may also fold the
+ * first progress message so the result is the only narration left open.
  */
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
@@ -532,6 +532,7 @@ function deriveTurnFolds(input: {
   latestTurn: TimelineLatestTurn | null;
   unsettledTurnId: TurnId | null;
   collapseOnlyWorkActivity: boolean;
+  collapseInitialAssistantMessage: boolean;
 }): ReadonlyMap<string, TurnFold> {
   interface TurnGroup {
     entries: Array<TimelineEntry>;
@@ -603,7 +604,10 @@ function deriveTurnFolds(input: {
       if (input.collapseOnlyWorkActivity && entry.kind !== "work") {
         continue;
       }
-      if (entry.id === firstAssistantEntry?.id || entry.id === group.terminalEntry?.id) {
+      if (entry.id === group.terminalEntry?.id) {
+        continue;
+      }
+      if (entry.id === firstAssistantEntry?.id && !input.collapseInitialAssistantMessage) {
         continue;
       }
       // Code presentation keeps agent-spawn CTAs visible because workflows
@@ -672,6 +676,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedTurnIds?: ReadonlySet<TurnId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   collapseOnlyWorkActivity?: boolean;
+  collapseInitialAssistantMessage?: boolean;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
@@ -692,6 +697,7 @@ export function deriveMessagesTimelineRows(input: {
     latestTurn: input.latestTurn ?? null,
     unsettledTurnId,
     collapseOnlyWorkActivity: input.collapseOnlyWorkActivity ?? false,
+    collapseInitialAssistantMessage: input.collapseInitialAssistantMessage ?? false,
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
@@ -1048,8 +1054,8 @@ export function deriveMessagesTimelineRows(input: {
 }
 
 /**
- * Work mode suppresses standalone work-log rows while keeping assistant
- * narration visible. Expanded disclosures restore their technical detail.
+ * Work mode suppresses standalone work-log rows. Expanded disclosures restore
+ * their technical detail.
  * Code mode bypasses this projection and retains the full timeline.
  */
 export function presentWorkTimelineRows(input: {

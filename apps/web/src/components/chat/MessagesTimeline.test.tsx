@@ -274,7 +274,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("px-1 text-sm leading-relaxed text-muted-foreground");
   });
 
-  it("keeps narration visible while collapsing settled technical activity in Work", () => {
+  it("keeps the result visible while collapsing settled narration and activity in Work", () => {
     const turnId = TurnId.make("turn-work-compact");
     const timelineEntries = [
       {
@@ -343,7 +343,7 @@ describe("MessagesTimeline", () => {
 
     expect(workMarkup).toContain("Worked for 5.0s");
     expect(workMarkup).toContain("The figures are correct.");
-    expect(workMarkup).toContain("I am checking the figures.");
+    expect(workMarkup).not.toContain("I am checking the figures.");
     expect(workMarkup).not.toContain("Inspected a spreadsheet");
     expect(codeMarkup).toContain("I am checking the figures.");
   });

@@ -5,6 +5,10 @@ import {
   type ProviderInstanceId,
 } from "@t3tools/contracts";
 import { createModelSelection, getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import {
+  resolveSelectableProviderInstanceEntry,
+  type ProviderInstanceEntry,
+} from "./providerInstances";
 
 export const APP_EXPERIENCES = ["code", "work"] as const;
 export type AppExperience = (typeof APP_EXPERIENCES)[number];
@@ -14,9 +18,27 @@ export function isAppExperience(value: unknown): value is AppExperience {
   return value === "code" || value === "work";
 }
 
+export function isStandaloneWorkProject(project: {
+  readonly title: string;
+  readonly workspaceRoot: string;
+}): boolean {
+  const segments = project.workspaceRoot.split(/[\\/]+/u).filter(Boolean);
+  const directoryName = segments.at(-1);
+  const dateDirectory = segments.at(-2);
+  return (
+    directoryName === project.title &&
+    directoryName.length <= 64 &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(directoryName) &&
+    dateDirectory !== undefined &&
+    /^\d{4}-\d{2}-\d{2}$/u.test(dateDirectory)
+  );
+}
+
 export const WORK_COMPLEXITIES = ["simple", "normal", "hard"] as const;
 export type WorkComplexity = (typeof WORK_COMPLEXITIES)[number];
 export const DEFAULT_WORK_COMPLEXITY: WorkComplexity = "normal";
+export const WORK_CODEX_DRIVER = ProviderDriverKind.make("codex");
+export const DEFAULT_WORK_CODEX_INSTANCE_ID = defaultInstanceIdForDriver(WORK_CODEX_DRIVER);
 
 export function workProjectDirectoryName(title: string): string {
   let pathSafeTitle = "";
@@ -66,11 +88,23 @@ export const WORK_MODEL_PRESETS: Readonly<Record<WorkComplexity, WorkModelPreset
   hard: { model: "gpt-5.6-sol", reasoningEffort: "high" },
 };
 
-const DEFAULT_CODEX_INSTANCE_ID = defaultInstanceIdForDriver(ProviderDriverKind.make("codex"));
+export function resolveWorkCodexInstance(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  preferredInstanceId: ProviderInstanceId | null | undefined,
+): ProviderInstanceEntry | undefined {
+  const codexEntries = entries.filter((entry) => entry.driverKind === WORK_CODEX_DRIVER);
+  const preferredCodexInstanceId = codexEntries.find(
+    (entry) => entry.instanceId === preferredInstanceId,
+  )?.instanceId;
+  return resolveSelectableProviderInstanceEntry(
+    codexEntries,
+    preferredCodexInstanceId ?? DEFAULT_WORK_CODEX_INSTANCE_ID,
+  );
+}
 
 export function createWorkModelSelection(
   complexity: WorkComplexity,
-  instanceId: ProviderInstanceId = DEFAULT_CODEX_INSTANCE_ID,
+  instanceId: ProviderInstanceId = DEFAULT_WORK_CODEX_INSTANCE_ID,
 ): ModelSelection {
   const preset = WORK_MODEL_PRESETS[complexity];
   return createModelSelection(instanceId, preset.model, [
@@ -84,7 +118,7 @@ export function createWorkModelSelection(
  */
 export function resolveWorkComplexity(
   selection: ModelSelection | null | undefined,
-  instanceId: ProviderInstanceId = DEFAULT_CODEX_INSTANCE_ID,
+  instanceId: ProviderInstanceId = DEFAULT_WORK_CODEX_INSTANCE_ID,
 ): WorkComplexity | null {
   if (!selection || selection.instanceId !== instanceId) {
     return null;

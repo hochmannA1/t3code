@@ -418,7 +418,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         runningTurnId,
         expandedTurnIds,
         expandedWorkGroupIds,
-        collapseOnlyWorkActivity: simplified,
+        collapseOnlyWorkActivity: false,
+        collapseInitialAssistantMessage: simplified,
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
@@ -1549,20 +1550,20 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
   const ctx = use(TimelineRowCtx);
   const technicalLabel = liveWorkEntryLabel(row.entry, ctx.workspaceRoot);
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
-  const label = ctx.simplified ? (failed ? "An action failed" : "Working") : technicalLabel;
+  const label = ctx.simplified ? (failed ? "Trying another approach" : "Working") : technicalLabel;
 
   return (
     <button
       type="button"
       className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      aria-label={failed ? (ctx.simplified ? label : `${label}, tool call failed`) : undefined}
+      aria-label={failed && !ctx.simplified ? `${label}, tool call failed` : undefined}
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
       <LiveActivityRow
         label={label}
         {...(ctx.simplified ? {} : { iconName: workEntryIconName(row.entry) })}
-        failed={failed}
+        failed={failed && !ctx.simplified}
       />
     </button>
   );

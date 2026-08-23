@@ -1511,7 +1511,12 @@ function OpenCommandPaletteDialog(props: {
     setQuery("");
     if (appExperience === "work") {
       setOpen(false);
-      void handleNewThread(null);
+      void startNewThreadFromContext({
+        activeDraftThread,
+        activeThread: activeThread ?? undefined,
+        defaultProjectRef: null,
+        handleNewThread,
+      });
       return;
     }
     if (projectThreadItems.length === 0) {
@@ -1540,6 +1545,8 @@ function OpenCommandPaletteDialog(props: {
     });
   }, [
     appExperience,
+    activeDraftThread,
+    activeThread,
     clearOpenIntent,
     browseNavigation,
     currentProjectEnvironmentId,
@@ -1562,7 +1569,12 @@ function OpenCommandPaletteDialog(props: {
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "chat.new",
       run: async () => {
-        await handleNewThread(null);
+        await startNewThreadFromContext({
+          activeDraftThread,
+          activeThread: activeThread ?? undefined,
+          defaultProjectRef: null,
+          handleNewThread,
+        });
       },
     });
   } else if (projects.length > 0) {

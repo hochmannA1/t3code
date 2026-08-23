@@ -4643,11 +4643,16 @@ function ChatViewContent(props: ChatViewProps) {
       return null;
     }
     const isSnoozed = activeThreadSnoozed;
+    const usesWorkTerminology = appExperience === "work";
     return {
       id: `thread-${isSnoozed ? "snoozed" : "settled"}:${activeThread?.id ?? "unknown"}`,
       variant: "info",
       icon: isSnoozed ? <AlarmClockIcon /> : <CheckCircle2Icon />,
-      title: `This thread is ${isSnoozed ? "snoozed" : "settled"}`,
+      title: isSnoozed
+        ? "This thread is snoozed"
+        : usesWorkTerminology
+          ? "This task is complete"
+          : "This thread is settled",
       description: isSnoozed
         ? "Sending a message wakes it and moves it back to Active in the sidebar."
         : "Sending a message moves it back to Active in the sidebar.",
@@ -4665,8 +4670,12 @@ function ChatViewContent(props: ChatViewProps) {
               ? "Waking..."
               : "Wake now"
             : isUnsettling
-              ? "Un-settling..."
-              : "Un-settle"}
+              ? usesWorkTerminology
+                ? "Reopening..."
+                : "Un-settling..."
+              : usesWorkTerminology
+                ? "Reopen"
+                : "Un-settle"}
         </Button>
       ),
     };
@@ -4674,6 +4683,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.id,
     activeThreadSettled,
     activeThreadSnoozed,
+    appExperience,
     handleUnsnoozeActiveThread,
     handleUnsettleActiveThread,
     isUnsnoozing,
@@ -5127,6 +5137,17 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    if (appExperience === "work" && ctxSelectedProvider !== ProviderDriverKind.make("codex")) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Start a new Work task",
+          description:
+            "Work mode runs with Codex, but this task is tied to another provider. Start a new task to continue with Codex.",
+        }),
+      );
+      return;
+    }
     const composerImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)

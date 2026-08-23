@@ -100,10 +100,13 @@ import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { WorkComplexityControl } from "../work/WorkComplexityControl";
 import {
+  DEFAULT_WORK_CODEX_INSTANCE_ID,
   DEFAULT_WORK_COMPLEXITY,
+  resolveWorkCodexInstance,
   resolveWorkComplexity,
   type AppExperience,
   type WorkComplexity,
+  WORK_CODEX_DRIVER,
 } from "../../workExperience";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
@@ -787,6 +790,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection?.instanceId ??
     null;
   const explicitSelectedInstanceId = selectedProviderByThreadId ?? threadProvider;
+  const workCodexInstance = resolveWorkCodexInstance(
+    providerInstanceEntries,
+    explicitSelectedInstanceId,
+  );
 
   const unlockedSelectedProvider =
     resolveProviderDriverKindForInstanceSelection(
@@ -796,7 +803,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ) ??
     providerInstanceEntries[0]?.driverKind ??
     ProviderDriverKind.make("unconfigured");
-  const requestedDriverKind: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
+  const requestedDriverKind: ProviderDriverKind =
+    lockedProvider ?? (appExperience === "work" ? WORK_CODEX_DRIVER : unlockedSelectedProvider);
   const lockedContinuationGroupKey = useMemo((): string | null => {
     if (!lockedProvider || !activeThread) return null;
     const lockedInstanceId =
@@ -824,6 +832,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   //   5. First enabled entry overall / default instance for the kind.
   //
   const selectedInstanceId = useMemo<ProviderInstanceId>(() => {
+    if (appExperience === "work" && lockedProvider === null) {
+      return workCodexInstance?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
+    }
     const candidates: Array<string | null | undefined> = [
       composerDraft.activeProvider,
       activeThread?.session?.providerInstanceId,
@@ -865,11 +876,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection?.instanceId,
     activeThread?.session?.providerInstanceId,
     activeThreadModelSelection?.instanceId,
+    appExperience,
     composerDraft.activeProvider,
     lockedContinuationGroupKey,
     lockedProvider,
     providerInstanceEntries,
     requestedDriverKind,
+    workCodexInstance?.instanceId,
   ]);
 
   // Resolve the active instance's snapshot by `instanceId` so a custom
@@ -946,13 +959,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
   );
-  const resolvedWorkComplexity = resolveWorkComplexity(selectedModelSelection, selectedInstanceId);
+  const workCodexInstanceId = workCodexInstance?.instanceId ?? DEFAULT_WORK_CODEX_INSTANCE_ID;
+  const resolvedWorkComplexity = resolveWorkComplexity(selectedModelSelection, workCodexInstanceId);
   const selectedWorkComplexity = resolvedWorkComplexity ?? DEFAULT_WORK_COMPLEXITY;
   useEffect(() => {
-    if (appExperience === "work" && resolvedWorkComplexity === null) {
-      onWorkComplexitySelect(DEFAULT_WORK_COMPLEXITY, selectedInstanceId);
+    if (
+      appExperience === "work" &&
+      workCodexInstance !== undefined &&
+      (selectedInstanceId !== workCodexInstanceId || resolvedWorkComplexity === null)
+    ) {
+      onWorkComplexitySelect(DEFAULT_WORK_COMPLEXITY, workCodexInstanceId);
     }
-  }, [appExperience, onWorkComplexitySelect, resolvedWorkComplexity, selectedInstanceId]);
+  }, [
+    appExperience,
+    onWorkComplexitySelect,
+    resolvedWorkComplexity,
+    selectedInstanceId,
+    workCodexInstance,
+    workCodexInstanceId,
+  ]);
   const selectedModelForPicker = selectedModel;
   // Instance-keyed option list so the picker can show each configured
   // instance (built-in + custom) as a first-class sidebar entry. The
@@ -3372,7 +3397,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <WorkComplexityControl
                       value={selectedWorkComplexity}
                       onValueChange={(complexity) =>
-                        onWorkComplexitySelect(complexity, selectedInstanceId)
+                        onWorkComplexitySelect(complexity, workCodexInstanceId)
                       }
                       disabled={isSendBusy || isConnecting}
                     />

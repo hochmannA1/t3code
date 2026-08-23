@@ -1,5 +1,6 @@
 import {
   ArrowLeftIcon,
+  BellIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
   SettingsIcon,
@@ -9,6 +10,7 @@ import { memo, useCallback } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { useWorkSidebarView } from "../../hooks/useWorkSidebarView";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import { useUiStateStore } from "../../uiStateStore";
@@ -33,6 +35,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { ExperienceSwitch } from "../work/ExperienceSwitch";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -77,25 +80,80 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           {pillLabel}
         </Badge>
       ) : null}
+      <WorkSidebarViewToggle onBackdrop={backdropVariant !== null} />
     </SidebarHeader>
+  );
+});
+
+const WorkSidebarViewToggle = memo(function WorkSidebarViewToggle({
+  onBackdrop,
+}: {
+  onBackdrop: boolean;
+}) {
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  const [view, setView] = useWorkSidebarView();
+  if (appExperience !== "work") return null;
+
+  const activityVisible = view === "activity";
+  const label = activityVisible ? "View projects" : "View activity";
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            aria-pressed={activityVisible}
+            onClick={() => setView(activityVisible ? "projects" : "activity")}
+            className={cn(
+              "relative z-10 ml-auto mr-2 inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              activityVisible && "bg-sidebar-row-active text-sidebar-foreground",
+              onBackdrop &&
+                "text-white/75 hover:bg-white/15 hover:text-white focus-visible:ring-white/90",
+              onBackdrop && activityVisible && "bg-white/15 text-white",
+            )}
+          />
+        }
+      >
+        <BellIcon className="size-4" />
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">{label}</TooltipPopup>
+    </Tooltip>
   );
 });
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   const appExperience = useUiStateStore((store) => store.appExperience);
   const setAppExperience = useUiStateStore((store) => store.setAppExperience);
+  const handleExperienceChange = useCallback(
+    (nextExperience: typeof appExperience) => {
+      if (nextExperience === appExperience) return;
+      setAppExperience(nextExperience);
+      if (nextExperience === "work") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Work mode uses Codex",
+            description:
+              "New tasks will run with Codex. If this task already uses another provider, start a new task to continue in Work mode.",
+          }),
+        );
+      }
+    },
+    [appExperience, setAppExperience],
+  );
 
   return (
     <div
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] flex h-8 w-fit min-w-0 shrink-0 items-center gap-0.5",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1 md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
     >
       <T3Wordmark />
       <ExperienceSwitch
         value={appExperience}
-        onValueChange={setAppExperience}
+        onValueChange={handleExperienceChange}
         className={cn(onBackdrop && "text-white hover:bg-white/15 [&_svg]:text-white/70")}
       />
     </div>

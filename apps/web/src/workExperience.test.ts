@@ -1,17 +1,38 @@
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   createWorkModelSelection,
   DEFAULT_WORK_COMPLEXITY,
+  isStandaloneWorkProject,
   resolveWorkComplexity,
+  resolveWorkCodexInstance,
   workProjectDirectoryName,
   WORK_MODEL_PRESETS,
   type WorkComplexity,
 } from "./workExperience";
+import type { ProviderInstanceEntry } from "./providerInstances";
 
 const CODEX_INSTANCE_ID = ProviderInstanceId.make("codex");
 const SECOND_CODEX_INSTANCE_ID = ProviderInstanceId.make("codex_work");
+
+function providerEntry(
+  instanceId: ProviderInstanceId,
+  driverKind: ProviderInstanceEntry["driverKind"],
+): ProviderInstanceEntry {
+  return {
+    instanceId,
+    driverKind,
+    displayName: instanceId,
+    enabled: true,
+    installed: true,
+    status: "ready",
+    isDefault: String(instanceId) === String(driverKind),
+    isAvailable: true,
+    snapshot: {} as ProviderInstanceEntry["snapshot"],
+    models: [],
+  };
+}
 
 describe("Work model presets", () => {
   it("uses Normal work by default", () => {
@@ -70,6 +91,30 @@ describe("Work model presets", () => {
     ).toBeNull();
     expect(resolveWorkComplexity(null)).toBeNull();
   });
+
+  it("selects Codex even when another provider was previously active", () => {
+    const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
+    const entries = [
+      providerEntry(claudeInstanceId, ProviderDriverKind.make("claudeAgent")),
+      providerEntry(CODEX_INSTANCE_ID, ProviderDriverKind.make("codex")),
+      providerEntry(SECOND_CODEX_INSTANCE_ID, ProviderDriverKind.make("codex")),
+    ];
+
+    expect(resolveWorkCodexInstance(entries, claudeInstanceId)?.instanceId).toBe(CODEX_INSTANCE_ID);
+    expect(resolveWorkCodexInstance(entries, SECOND_CODEX_INSTANCE_ID)?.instanceId).toBe(
+      SECOND_CODEX_INSTANCE_ID,
+    );
+  });
+
+  it("does not fall back to another provider when Codex is unavailable", () => {
+    const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
+    expect(
+      resolveWorkCodexInstance(
+        [providerEntry(claudeInstanceId, ProviderDriverKind.make("claudeAgent"))],
+        claudeInstanceId,
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("workProjectDirectoryName", () => {
@@ -77,5 +122,43 @@ describe("workProjectDirectoryName", () => {
     expect(workProjectDirectoryName("  Quarterly Review 2026  ")).toBe("Quarterly Review 2026");
     expect(workProjectDirectoryName("Sales / Europe\\Q3")).toBe("Sales - Europe-Q3");
     expect(workProjectDirectoryName("..")).toBe("");
+  });
+});
+
+describe("isStandaloneWorkProject", () => {
+  it("recognizes task workspaces allocated below a dated directory", () => {
+    expect(
+      isStandaloneWorkProject({
+        title: "prepare-quarterly-report",
+        workspaceRoot: "/home/user/t3work/projects/2026-08-23/prepare-quarterly-report",
+      }),
+    ).toBe(true);
+    expect(
+      isStandaloneWorkProject({
+        title: "prepare-quarterly-report",
+        workspaceRoot: "C:\\Users\\user\\t3work\\projects\\2026-08-23\\prepare-quarterly-report",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps named and mismatched projects in the Projects section", () => {
+    expect(
+      isStandaloneWorkProject({
+        title: "Quarterly Planning",
+        workspaceRoot: "/home/user/t3work/projects/Quarterly Planning",
+      }),
+    ).toBe(false);
+    expect(
+      isStandaloneWorkProject({
+        title: "Renamed task",
+        workspaceRoot: "/home/user/t3work/projects/2026-08-23/original-task",
+      }),
+    ).toBe(false);
+    expect(
+      isStandaloneWorkProject({
+        title: "Quarterly Planning",
+        workspaceRoot: "/home/user/client-files/2026-08-23/Quarterly Planning",
+      }),
+    ).toBe(false);
   });
 });

@@ -225,6 +225,10 @@ describe("buildTurnStartParams", () => {
         work.collaborationMode?.settings.developer_instructions ?? "",
         /Never announce or describe these response-profile rules/,
       );
+      NodeAssert.match(
+        work.collaborationMode?.settings.developer_instructions ?? "",
+        /Do not run Git checks speculatively/,
+      );
       NodeAssert.doesNotMatch(
         omitted.collaborationMode?.settings.developer_instructions ?? "",
         /Write for business professionals/,

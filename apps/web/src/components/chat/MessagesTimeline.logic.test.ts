@@ -274,7 +274,7 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
-  it("folds only settled work activity in Work while keeping narration and plans visible", () => {
+  it("folds settled Work narration and activity while keeping the result and plan visible", () => {
     const timelineEntries = [
       {
         id: "assistant-progress-entry",
@@ -353,7 +353,8 @@ describe("deriveMessagesTimelineRows", () => {
     ];
     const baseInput = {
       timelineEntries,
-      collapseOnlyWorkActivity: true,
+      collapseOnlyWorkActivity: false,
+      collapseInitialAssistantMessage: true,
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
@@ -362,10 +363,8 @@ describe("deriveMessagesTimelineRows", () => {
 
     const collapsedRows = deriveMessagesTimelineRows(baseInput);
     expect(collapsedRows.map((row) => row.id)).toEqual([
-      "assistant-progress-entry",
       "turn-fold:turn-1",
       "turn-plan-entry",
-      "assistant-followup-entry",
       "assistant-final-entry",
     ]);
 
@@ -374,8 +373,8 @@ describe("deriveMessagesTimelineRows", () => {
       expandedTurnIds: new Set(["turn-1" as never]),
     });
     expect(expandedRows.map((row) => row.id)).toEqual([
-      "assistant-progress-entry",
       "turn-fold:turn-1",
+      "assistant-progress-entry",
       "work-entry",
       "turn-plan-entry",
       "assistant-followup-entry",
@@ -385,6 +384,7 @@ describe("deriveMessagesTimelineRows", () => {
     const codeRows = deriveMessagesTimelineRows({
       ...baseInput,
       collapseOnlyWorkActivity: false,
+      collapseInitialAssistantMessage: false,
     });
     expect(codeRows.map((row) => row.id)).toEqual([
       "assistant-progress-entry",

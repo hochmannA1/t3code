@@ -51,6 +51,21 @@ describe("chatThreadActions", () => {
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
   });
 
+  it("prefers an explicitly selected project over the active thread", () => {
+    const selectedProjectRef = scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID);
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        selectedProjectRef,
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+      }),
+    );
+
+    expect(projectRef).toEqual(selectedProjectRef);
+  });
+
   it("falls back to the active draft thread project when there is no active thread", () => {
     const projectRef = resolveThreadActionProjectRef(
       createContext({

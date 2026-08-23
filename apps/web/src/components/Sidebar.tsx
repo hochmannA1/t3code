@@ -178,6 +178,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./u
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { WorkProjectDialog } from "./work/WorkProjectDialog";
+import { isStandaloneWorkProject } from "../workExperience";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -472,6 +473,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   projectCwd: string | null;
   projectFaviconPath: string | null;
   simplified: boolean;
+  showProjectTitle: boolean;
   isActive: boolean;
   onNavigate: (draftId: DraftId) => void;
   onDiscard: (draftId: DraftId) => void;
@@ -533,16 +535,16 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
               aria-hidden
               className="size-3 shrink-0 text-amber-600 dark:text-amber-300/80"
             />
-            {props.simplified ? null : (
+            {props.showProjectTitle ? (
               <ProjectFavicon
                 environmentId={session.environmentId}
                 cwd={props.projectCwd ?? ""}
                 faviconPath={props.projectFaviconPath}
                 className="size-4 shrink-0"
               />
-            )}
+            ) : null}
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
-              {props.simplified ? "Draft" : props.projectTitle}
+              {props.showProjectTitle ? props.projectTitle : "Draft"}
             </span>
             <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
               <Tooltip>
@@ -587,6 +589,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   routeDraftId: string | null;
   onNavigateToDraft: (draftId: DraftId) => void;
   simplified: boolean;
+  showProjectTitles: boolean;
 }) {
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
   const draftsByThreadKey = useComposerDraftStore((store) => store.draftsByThreadKey);
@@ -680,6 +683,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
             projectCwd={props.projectCwdByKey.get(projectKey) ?? null}
             projectFaviconPath={props.projectFaviconPathByKey.get(projectKey) ?? null}
             simplified={props.simplified}
+            showProjectTitle={props.showProjectTitles}
             isActive={draftId === props.routeDraftId}
             onNavigate={props.onNavigateToDraft}
             onDiscard={handleDiscard}
@@ -949,7 +953,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     props.currentEnvironmentId !== null && thread.environmentId !== props.currentEnvironmentId;
 
   const detailsTooltip = props.simplified ? (
-    <TooltipPopup side="right">{thread.title}</TooltipPopup>
+    <TooltipPopup side="right">
+      {props.projectTitle ? `${thread.title} · ${props.projectTitle}` : thread.title}
+    </TooltipPopup>
   ) : (
     <SidebarThreadTooltip
       thread={thread}
@@ -1233,7 +1239,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
-              {props.simplified ? (
+              {props.simplified && props.projectTitle === null ? (
                 <MessageSquareIcon className="size-4" />
               ) : (
                 <ProjectFavicon
@@ -1316,7 +1322,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     render={
                       <button
                         type="button"
-                        aria-label="Un-settle thread"
+                        aria-label={props.simplified ? "Mark task active" : "Un-settle thread"}
                         onClick={handleUnsettleClick}
                         className={cn(
                           "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -1327,12 +1333,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   >
                     <Undo2Icon className="mb-px size-3.5" />
                   </TooltipTrigger>
-                  <TooltipPopup side="top">Un-settle thread</TooltipPopup>
+                  <TooltipPopup side="top">
+                    {props.simplified ? "Mark task active" : "Un-settle thread"}
+                  </TooltipPopup>
                 </Tooltip>
               ) : (
                 <button
                   type="button"
-                  aria-label="Settle thread"
+                  aria-label={props.simplified ? "Mark task complete" : "Settle thread"}
                   onClick={handleSettleClick}
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -1395,7 +1403,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
-              {props.simplified ? (
+              {props.simplified && props.projectTitle === null ? (
                 <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
               ) : (
                 <ProjectFavicon
@@ -1405,7 +1413,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   className="size-4 shrink-0"
                 />
               )}
-              {!props.simplified && props.projectTitle ? (
+              {props.projectTitle ? (
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate text-secondary-label text-xs",
@@ -1533,16 +1541,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           render={
                             <button
                               type="button"
-                              aria-label="Settle thread"
+                              aria-label={props.simplified ? "Mark task complete" : "Settle thread"}
                               onClick={handleSettleClick}
                               className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
                             />
                           }
                         >
                           <CheckIcon className="size-3.5" />
-                          Settle
+                          {props.simplified ? "Complete" : "Settle"}
                         </TooltipTrigger>
-                        <TooltipPopup>Settle thread</TooltipPopup>
+                        <TooltipPopup>
+                          {props.simplified ? "Mark task complete" : "Settle thread"}
+                        </TooltipPopup>
                       </Tooltip>
                     ) : null}
                   </span>
@@ -1946,6 +1956,47 @@ export default function Sidebar() {
       ),
     [projectGroups],
   );
+  const standaloneWorkProjectKeys = useMemo(
+    () =>
+      new Set(
+        projects
+          .filter(isStandaloneWorkProject)
+          .map((project) => `${project.environmentId}:${project.id}`),
+      ),
+    [projects],
+  );
+  const selectableProjectGroups = useMemo(
+    () =>
+      appExperience === "work"
+        ? projectGroups.filter((group) =>
+            group.memberProjects.some((project) => !isStandaloneWorkProject(project)),
+          )
+        : projectGroups,
+    [appExperience, projectGroups],
+  );
+  const projectTaskCountByKey = useMemo(() => {
+    const logicalProjectKeyByMember = new Map<string, string>();
+    const counts = new Map<string, number>();
+    for (const group of projectGroups) {
+      counts.set(group.projectKey, 0);
+      for (const projectRef of group.memberProjectRefs) {
+        logicalProjectKeyByMember.set(
+          `${projectRef.environmentId}:${projectRef.projectId}`,
+          group.projectKey,
+        );
+      }
+    }
+    for (const thread of threads) {
+      if (thread.archivedAt !== null) continue;
+      const groupKey = logicalProjectKeyByMember.get(`${thread.environmentId}:${thread.projectId}`);
+      if (groupKey !== undefined) counts.set(groupKey, (counts.get(groupKey) ?? 0) + 1);
+    }
+    return counts;
+  }, [projectGroups, threads]);
+  const allProjectTaskCount = useMemo(
+    () => threads.filter((thread) => thread.archivedAt === null).length,
+    [threads],
+  );
 
   // now is quantized to the minute so effectiveSettled memoization doesn't
   // churn on every render; auto-settle thresholds are day-granular anyway.
@@ -1966,8 +2017,9 @@ export default function Sidebar() {
     () =>
       projectScopeKey === null
         ? null
-        : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null),
-    [projectGroups, projectScopeKey],
+        : (selectableProjectGroups.find((project) => project.projectKey === projectScopeKey) ??
+          null),
+    [projectScopeKey, selectableProjectGroups],
   );
   const scopedProjectKeys = useMemo(
     () =>
@@ -1978,6 +2030,13 @@ export default function Sidebar() {
               (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
             ),
           ),
+    [scopedProjectGroup],
+  );
+  const selectedProjectRef = useMemo(
+    () =>
+      scopedProjectGroup === null
+        ? null
+        : scopeProjectRef(scopedProjectGroup.environmentId, scopedProjectGroup.id),
     [scopedProjectGroup],
   );
   useEffect(() => {
@@ -2530,7 +2589,10 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Failed to settle thread",
+                  title:
+                    appExperience === "work"
+                      ? "Could not complete task"
+                      : "Failed to settle thread",
                   description: error instanceof Error ? error.message : "An error occurred.",
                 }),
               );
@@ -2547,7 +2609,7 @@ export default function Sidebar() {
         }
       })();
     },
-    [planForwardNavigation, settleThread],
+    [appExperience, planForwardNavigation, settleThread],
   );
   const attemptUnsettle = useCallback(
     (threadRef: ScopedThreadRef) => {
@@ -2558,14 +2620,17 @@ export default function Sidebar() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to un-settle thread",
+              title:
+                appExperience === "work"
+                  ? "Could not mark task active"
+                  : "Failed to un-settle thread",
               description: error instanceof Error ? error.message : "An error occurred.",
             }),
           );
         }
       })();
     },
-    [unsettleThread],
+    [appExperience, unsettleThread],
   );
   const attemptUnsnooze = useCallback(
     (threadRef: ScopedThreadRef) => {
@@ -2879,7 +2944,10 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Settle (${count})` },
+            {
+              id: "settle",
+              label: `${appExperience === "work" ? "Complete" : "Settle"} (${count})`,
+            },
             ...(canSnoozeSelection
               ? [
                   {
@@ -3049,6 +3117,7 @@ export default function Sidebar() {
     [
       attemptSettle,
       attemptSnooze,
+      appExperience,
       clearSelection,
       confirmThreadDelete,
       deleteThread,
@@ -3102,6 +3171,7 @@ export default function Sidebar() {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
+              workTerminology: appExperience === "work",
               branch: thread.branch ?? null,
               isPinned,
               isSettled,
@@ -3275,6 +3345,7 @@ export default function Sidebar() {
     },
     [
       archiveThread,
+      appExperience,
       attemptPin,
       attemptSettle,
       attemptSnooze,
@@ -3384,7 +3455,13 @@ export default function Sidebar() {
     (event?: ReactMouseEvent) => {
       if (appExperience === "work") {
         if (isMobile) setOpenMobile(false);
-        void newThreadContext.handleNewThread(null);
+        void startNewThreadFromContext({
+          activeDraftThread: newThreadContext.activeDraftThread,
+          activeThread: newThreadContext.activeThread ?? undefined,
+          selectedProjectRef,
+          defaultProjectRef: null,
+          handleNewThread: newThreadContext.handleNewThread,
+        });
         return;
       }
       // One project: nothing to pick, create immediately. Shift+click creates
@@ -3403,7 +3480,14 @@ export default function Sidebar() {
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [appExperience, isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [
+      appExperience,
+      isMobile,
+      newThreadContext,
+      projectGroups.length,
+      selectedProjectRef,
+      setOpenMobile,
+    ],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
@@ -3441,8 +3525,8 @@ export default function Sidebar() {
                     setActiveSearchResultIndex(0);
                   }}
                   onKeyDown={handleThreadSearchKeyDown}
-                  placeholder="Search"
-                  aria-label="Search threads"
+                  placeholder={appExperience === "work" ? "Search tasks" : "Search"}
+                  aria-label={appExperience === "work" ? "Search tasks" : "Search threads"}
                   role="combobox"
                   aria-autocomplete="list"
                   aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
@@ -3484,7 +3568,7 @@ export default function Sidebar() {
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
                         disabled={appExperience === "code" && projects.length === 0}
-                        aria-label="New thread"
+                        aria-label={appExperience === "work" ? "New task" : "New thread"}
                       />
                     }
                   >
@@ -3495,7 +3579,20 @@ export default function Sidebar() {
                     />
                   </TooltipTrigger>
                   <TooltipPopup side="right">
-                    {projectGroups.length > 1 ? (
+                    {appExperience === "work" ? (
+                      <span className="flex flex-col gap-0.5">
+                        <span>
+                          {newThreadShortcutLabel
+                            ? `New task (${newThreadShortcutLabel})`
+                            : "New task"}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {scopedProjectGroup
+                            ? `In ${scopedProjectGroup.displayName}`
+                            : "Uses the current task's project"}
+                        </span>
+                      </span>
+                    ) : projectGroups.length > 1 ? (
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel
@@ -3542,13 +3639,17 @@ export default function Sidebar() {
                 </div>
               ) : null}
             </div>
-            {appExperience === "code" && projectGroups.length > 0 ? (
+            {selectableProjectGroups.length > 0 ? (
               <div className="flex items-center gap-1">
                 <Menu open={projectScopeMenuOpen} onOpenChange={setProjectScopeMenuOpen}>
                   <MenuTrigger
                     render={
                       <SidebarMenuButton
-                        aria-label="Filter threads by project"
+                        aria-label={
+                          appExperience === "work"
+                            ? "Filter tasks by project"
+                            : "Filter threads by project"
+                        }
                         className="min-w-0 flex-1 ps-[calc(var(--sidebar-row-content-inset)-1px)] focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                       />
                     }
@@ -3566,6 +3667,13 @@ export default function Sidebar() {
                     <span className="min-w-0 flex-1 truncate">
                       {scopedProjectGroup?.displayName ?? "All projects"}
                     </span>
+                    {appExperience === "work" ? (
+                      <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
+                        {scopedProjectGroup
+                          ? (projectTaskCountByKey.get(scopedProjectGroup.projectKey) ?? 0)
+                          : allProjectTaskCount}
+                      </span>
+                    ) : null}
                     <ChevronDownIcon className="-mr-px size-4 shrink-0" />
                   </MenuTrigger>
                   <MenuPopup align="start" className="w-(--anchor-width)">
@@ -3582,8 +3690,13 @@ export default function Sidebar() {
                       >
                         <FolderIcon className="size-4 shrink-0" />
                         <span className="min-w-0 truncate text-sm">All projects</span>
+                        {appExperience === "work" ? (
+                          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
+                            {allProjectTaskCount} {allProjectTaskCount === 1 ? "task" : "tasks"}
+                          </span>
+                        ) : null}
                       </MenuRadioItem>
-                      {projectGroups.map((project) => {
+                      {selectableProjectGroups.map((project) => {
                         const scopeKey = project.projectKey;
                         return (
                           <MenuRadioItem
@@ -3599,12 +3712,23 @@ export default function Sidebar() {
                               className="size-4 shrink-0"
                             />
                             <span className="min-w-0 truncate text-sm">{project.displayName}</span>
+                            {appExperience === "work" ? (
+                              <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
+                                {projectTaskCountByKey.get(project.projectKey) ?? 0}{" "}
+                                {(projectTaskCountByKey.get(project.projectKey) ?? 0) === 1
+                                  ? "task"
+                                  : "tasks"}
+                              </span>
+                            ) : null}
                             <Button
                               size="icon-xs"
                               variant="ghost-muted"
                               aria-label={`Project settings for ${project.displayName}`}
                               title={`Project settings for ${project.displayName}`}
-                              className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
+                              className={cn(
+                                "size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground",
+                                appExperience === "code" && "ml-auto",
+                              )}
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={(event) => {
                                 void handleProjectSettings(event, project);
@@ -3618,26 +3742,28 @@ export default function Sidebar() {
                     </MenuRadioGroup>
                   </MenuPopup>
                 </Menu>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="icon"
-                        className="relative shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={openAddProjectCommandPalette}
-                        type="button"
-                        aria-label="New project"
+                {appExperience === "code" ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <SidebarMenuButton
+                          size="icon"
+                          className="relative shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                          onClick={openAddProjectCommandPalette}
+                          type="button"
+                          aria-label="New project"
+                        />
+                      }
+                    >
+                      <FolderPlusIcon />
+                      <span
+                        className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                        aria-hidden="true"
                       />
-                    }
-                  >
-                    <FolderPlusIcon />
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">New project</TooltipPopup>
-                </Tooltip>
+                    </TooltipTrigger>
+                    <TooltipPopup side="right">New project</TooltipPopup>
+                  </Tooltip>
+                ) : null}
               </div>
             ) : null}
           </SidebarGroup>
@@ -3675,7 +3801,11 @@ export default function Sidebar() {
                           ) ?? null
                         }
                         projectTitle={
-                          appExperience === "code"
+                          appExperience === "code" ||
+                          (projectScopeKey === null &&
+                            !standaloneWorkProjectKeys.has(
+                              `${thread.environmentId}:${thread.projectId}`,
+                            ))
                             ? (projectDisplayNameByKey.get(
                                 `${thread.environmentId}:${thread.projectId}`,
                               ) ?? null)
@@ -3701,7 +3831,7 @@ export default function Sidebar() {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No threads found
+                {appExperience === "work" ? "No tasks found" : "No threads found"}
               </p>
             )
           ) : null}
@@ -3790,7 +3920,11 @@ export default function Sidebar() {
                           ) ?? null
                         }
                         projectTitle={
-                          appExperience === "code"
+                          appExperience === "code" ||
+                          (projectScopeKey === null &&
+                            !standaloneWorkProjectKeys.has(
+                              `${thread.environmentId}:${thread.projectId}`,
+                            ))
                             ? (projectDisplayNameByKey.get(
                                 `${thread.environmentId}:${thread.projectId}`,
                               ) ?? null)
@@ -3839,6 +3973,7 @@ export default function Sidebar() {
                       routeDraftId={routeDraftIdForRows}
                       onNavigateToDraft={navigateToDraft}
                       simplified={appExperience === "work"}
+                      showProjectTitles={appExperience === "code" || projectScopeKey === null}
                     />,
                     pinnedThreads.length > 0 ? (
                       <li key="pinned-dnd" className="list-none">
@@ -3948,8 +4083,10 @@ export default function Sidebar() {
                         >
                           <span className="text-xs font-medium text-muted-foreground/50">
                             {settledShelfExpanded
-                              ? "Settled"
-                              : `Settled (${settledThreads.length})`}
+                              ? appExperience === "work"
+                                ? "Completed"
+                                : "Settled"
+                              : `${appExperience === "work" ? "Completed" : "Settled"} (${settledThreads.length})`}
                           </span>
                           <span className="h-px flex-1 bg-sidebar-border/60" />
                           <ChevronDownIcon
@@ -3992,7 +4129,33 @@ export default function Sidebar() {
             0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {appExperience === "work" ? (
-                <span>No tasks yet</span>
+                projects.length === 0 ? (
+                  <>
+                    <span>No projects yet</span>
+                    <button
+                      type="button"
+                      onClick={() => setWorkProjectDialogOpen(true)}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      <PlusIcon className="-mx-0.5 size-3" />
+                      Create project
+                    </button>
+                  </>
+                ) : scopedProjectGroup ? (
+                  <>
+                    <span>No tasks in {scopedProjectGroup.displayName} yet</span>
+                    <button
+                      type="button"
+                      onClick={handleNewThreadClick}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      <SquarePenIcon className="-mx-0.5 size-3" />
+                      New task
+                    </button>
+                  </>
+                ) : (
+                  <span>No tasks yet</span>
+                )
               ) : projects.length === 0 ? (
                 <>
                   <span>No projects yet</span>

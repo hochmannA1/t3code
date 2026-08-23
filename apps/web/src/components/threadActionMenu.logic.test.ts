@@ -51,6 +51,20 @@ describe("buildThreadActionMenuItems", () => {
     expect(ids(baseState)).toEqual(expect.arrayContaining(["pin", "settle", "snooze"]));
   });
 
+  it("uses task language for settlement actions in Work mode", () => {
+    const complete = buildThreadActionMenuItems({ ...baseState, workTerminology: true }).find(
+      (item) => item.id === "settle",
+    );
+    const reopen = buildThreadActionMenuItems({
+      ...baseState,
+      workTerminology: true,
+      isSettled: true,
+    }).find((item) => item.id === "unsettle");
+
+    expect(complete?.label).toBe("Mark task complete");
+    expect(reopen?.label).toBe("Mark task active");
+  });
+
   it("disables snooze when the thread cannot snooze, keeping presets visible", () => {
     const snooze = buildThreadActionMenuItems({ ...baseState, canSnoozeNow: false }).find(
       (item) => item.id === "snooze",

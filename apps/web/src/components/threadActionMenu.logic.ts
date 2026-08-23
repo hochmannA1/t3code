@@ -26,6 +26,7 @@ export type ThreadActionMenuId =
   | "delete";
 
 export interface ThreadActionMenuState {
+  readonly workTerminology?: boolean;
   readonly branch: string | null;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
@@ -74,8 +75,16 @@ export function buildThreadActionMenuItems(
     ...(state.supports.settlement
       ? [
           state.isSettled
-            ? { id: "unsettle" as const, label: "Un-settle thread", icon: "circle-check" }
-            : { id: "settle" as const, label: "Settle thread", icon: "circle-check" },
+            ? {
+                id: "unsettle" as const,
+                label: state.workTerminology ? "Mark task active" : "Un-settle thread",
+                icon: "circle-check",
+              }
+            : {
+                id: "settle" as const,
+                label: state.workTerminology ? "Mark task complete" : "Settle thread",
+                icon: "circle-check",
+              },
         ]
       : []),
     ...(state.supports.snooze
