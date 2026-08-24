@@ -3453,15 +3453,9 @@ export default function Sidebar() {
   // for multi-project setups.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
-      if (appExperience === "work") {
+      if (appExperience === "work" || projectGroups.length === 0) {
         if (isMobile) setOpenMobile(false);
-        void startNewThreadFromContext({
-          activeDraftThread: newThreadContext.activeDraftThread,
-          activeThread: newThreadContext.activeThread ?? undefined,
-          selectedProjectRef,
-          defaultProjectRef: null,
-          handleNewThread: newThreadContext.handleNewThread,
-        });
+        void newThreadContext.handleNewThread(null);
         return;
       }
       // One project: nothing to pick, create immediately. Shift+click creates
@@ -3567,7 +3561,6 @@ export default function Sidebar() {
                         type="button"
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
-                        disabled={appExperience === "code" && projects.length === 0}
                         aria-label={appExperience === "work" ? "New task" : "New thread"}
                       />
                     }

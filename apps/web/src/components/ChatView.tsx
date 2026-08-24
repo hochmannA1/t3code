@@ -340,6 +340,7 @@ import {
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
+  shouldAllocateStandaloneProject,
   startNewThreadForProject,
   waitForStartedServerThread,
 } from "./ChatView.logic";
@@ -1606,6 +1607,8 @@ function ChatViewContent(props: ChatViewProps) {
     ? (composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE)
     : DEFAULT_INTERACTION_MODE;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
+  const isStandaloneDraft =
+    isLocalDraftThread && draftThread?.logicalProjectKey.startsWith("standalone-draft:") === true;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
   const activeThreadEnvironmentId = activeThread?.environmentId ?? null;
@@ -1850,6 +1853,36 @@ function ChatViewContent(props: ChatViewProps) {
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
+  const composerProjectOptions = useMemo(
+    () =>
+      allProjects
+        .filter((project) => project.environmentId === environmentId)
+        .toSorted((left, right) => left.title.localeCompare(right.title))
+        .map((project) => ({
+          ref: scopeProjectRef(project.environmentId, project.id),
+          value: scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
+          label: project.title,
+        })),
+    [allProjects, environmentId],
+  );
+  const handleComposerProjectSelect = useCallback(
+    (projectRef: ReturnType<typeof scopeProjectRef> | null) => {
+      if (routeKind !== "draft") return;
+      if (
+        projectRef !== null &&
+        activeProjectRef !== null &&
+        scopedProjectKey(projectRef) === scopedProjectKey(activeProjectRef)
+      ) {
+        return;
+      }
+      if (projectRef === null && isStandaloneDraft) return;
+      void handleNewThread(projectRef, {
+        replace: true,
+        carryComposerContent: true,
+      });
+    },
+    [activeProjectRef, handleNewThread, isStandaloneDraft, routeKind],
+  );
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   useEffect(() => {
     if (!activeThreadRef || !activeProjectRef) return;
@@ -5295,11 +5328,12 @@ function ChatViewContent(props: ChatViewProps) {
 
     sendInFlightRef.current = true;
     if (
-      projectForSend === null &&
-      appExperience === "work" &&
-      isLocalDraftThread &&
       draftId &&
-      draftThread?.logicalProjectKey.startsWith("standalone-draft:")
+      shouldAllocateStandaloneProject({
+        projectAvailable: projectForSend !== null,
+        isLocalDraftThread,
+        logicalProjectKey: draftThread?.logicalProjectKey,
+      })
     ) {
       beginLocalDispatch({ preparingWorktree: false, submissionIntent: "foreground" });
       const firstAttachment = composerImages[0];
@@ -6750,7 +6784,6 @@ function ChatViewContent(props: ChatViewProps) {
                         <DraftHeroHeadline
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
-                          simplified={appExperience === "work"}
                         />
                       </div>
                       <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
@@ -6794,9 +6827,16 @@ function ChatViewContent(props: ChatViewProps) {
                             projectSelectionRequired={
                               appExperience === "code" &&
                               isLocalDraftThread &&
-                              activeProject === null
+                              activeProject === null &&
+                              !isStandaloneDraft
                             }
                             appExperience={appExperience}
+                            activeProjectTitle={activeProject?.title ?? null}
+                            activeProjectValue={
+                              activeProjectRef ? scopedProjectKey(activeProjectRef) : null
+                            }
+                            projectOptions={composerProjectOptions}
+                            projectPickerEnabled={routeKind === "draft"}
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
@@ -6861,6 +6901,7 @@ function ChatViewContent(props: ChatViewProps) {
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}
                             onExpandImage={onExpandTimelineImage}
+                            onProjectSelect={handleComposerProjectSelect}
                           />
                         </div>
                       </div>

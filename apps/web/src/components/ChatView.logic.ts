@@ -93,6 +93,18 @@ export function startNewThreadForProject(
   return true;
 }
 
+export function shouldAllocateStandaloneProject(input: {
+  readonly projectAvailable: boolean;
+  readonly isLocalDraftThread: boolean;
+  readonly logicalProjectKey: string | undefined;
+}): boolean {
+  return (
+    !input.projectAvailable &&
+    input.isLocalDraftThread &&
+    input.logicalProjectKey?.startsWith("standalone-draft:") === true
+  );
+}
+
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
   nextModelSelection?: ModelSelection;

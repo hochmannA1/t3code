@@ -272,6 +272,7 @@ export const make = Effect.gen(function* () {
     const registration: AutomationMirrorRegistration = {
       automationId: automation.automationId,
       projectId: automation.projectId,
+      name: automation.name,
       revision: automation.revision,
       enabled: automation.status === "active",
       schedule: automation.schedule,

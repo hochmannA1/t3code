@@ -82,7 +82,7 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.newLocal") {
         event.preventDefault();
         event.stopPropagation();
-        if (appExperience === "work") {
+        if (appExperience === "work" || projectGroupCount === 0) {
           void handleNewThread(null);
           return;
         }
@@ -101,7 +101,7 @@ function ChatRouteGlobalShortcuts() {
         // The default sidebar routes creation through the command palette
         // whenever there is a real choice to make; the legacy sidebar (and
         // single-project setups) keep the immediate contextual create.
-        if (appExperience === "work") {
+        if (appExperience === "work" || projectGroupCount === 0) {
           void handleNewThread(null);
           return;
         }

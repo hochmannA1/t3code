@@ -64,6 +64,7 @@ testLayer("AutomationStore", (it) => {
       `;
       assert.strictEqual(rows.length, 1);
       assert.notInclude(rows[0]?.payload ?? "", automation.prompt);
+      assert.include(rows[0]?.payload ?? "", '"name":"Daily report"');
       assert.include(rows[0]?.payload ?? "", '"nextRunAt":"2026-08-23T10:00:00.000Z"');
     }),
   );

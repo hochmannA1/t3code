@@ -200,6 +200,7 @@ export type AutomationCapabilities = typeof AutomationCapabilities.Type;
 export const AutomationMirrorRegistration = Schema.Struct({
   automationId: AutomationId,
   projectId: ProjectId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   revision: PositiveInt,
   enabled: Schema.Boolean,
   schedule: AutomationSchedule,

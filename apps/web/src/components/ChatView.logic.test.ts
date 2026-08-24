@@ -33,6 +33,7 @@ import {
   resolveDraftHeroState,
   scheduleEnvironmentReconnectWarning,
   startNewThreadForProject,
+  shouldAllocateStandaloneProject,
   shouldDockDraftHeroForSubmission,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
@@ -615,6 +616,28 @@ describe("startNewThreadForProject", () => {
       }),
     ).toBe(false);
     expect(called).toBe(false);
+  });
+});
+
+describe("shouldAllocateStandaloneProject", () => {
+  it("allocates a workspace for a projectless local draft", () => {
+    expect(
+      shouldAllocateStandaloneProject({
+        projectAvailable: false,
+        isLocalDraftThread: true,
+        logicalProjectKey: "standalone-draft:draft-1",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not replace a missing project on an ordinary draft", () => {
+    expect(
+      shouldAllocateStandaloneProject({
+        projectAvailable: false,
+        isLocalDraftThread: true,
+        logicalProjectKey: "environment-local:deleted-project",
+      }),
+    ).toBe(false);
   });
 });
 

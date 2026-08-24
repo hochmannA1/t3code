@@ -81,20 +81,13 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           {pillLabel}
         </Badge>
       ) : null}
-      <WorkSidebarViewToggle onBackdrop={backdropVariant !== null} />
+      <SidebarViewToggle onBackdrop={backdropVariant !== null} />
     </SidebarHeader>
   );
 });
 
-const WorkSidebarViewToggle = memo(function WorkSidebarViewToggle({
-  onBackdrop,
-}: {
-  onBackdrop: boolean;
-}) {
-  const appExperience = useUiStateStore((store) => store.appExperience);
+const SidebarViewToggle = memo(function SidebarViewToggle({ onBackdrop }: { onBackdrop: boolean }) {
   const [view, setView] = useWorkSidebarView();
-  if (appExperience !== "work") return null;
-
   const activityVisible = view === "activity";
   const label = activityVisible ? "View projects" : "View activity";
   return (
@@ -181,18 +174,26 @@ function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  fullWidth = false,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  fullWidth?: boolean;
 }) {
   return (
-    <SidebarMenuItem className="shrink-0">
+    <SidebarMenuItem className={cn("shrink-0", fullWidth && "min-w-0 flex-1")}>
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              onClick={onClick}
+              size={fullWidth ? "default" : "icon"}
+              className={cn(fullWidth && "w-full")}
+            >
               {icon}
+              {fullWidth ? <span>{label}</span> : null}
             </SidebarMenuButton>
           }
         />
@@ -264,7 +265,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [canGoBack, closeMobileSidebar, navigate]);
 
   return (
-    <SidebarMenu className="flex-row items-center">
+    <SidebarMenu className="flex-row flex-wrap items-center">
       {currentFooterPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton onClick={handleBackClick}>
@@ -279,13 +280,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
-          {automationsSupported ? (
-            <SidebarUtilityItem
-              icon={<CalendarClockIcon />}
-              label="Automations"
-              onClick={handleAutomationsClick}
-            />
-          ) : null}
           {appExperience === "code" && pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<GitPullRequestIcon />}
@@ -298,6 +292,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               icon={<ChartNoAxesColumnIcon />}
               label="Usage"
               onClick={handleUsageClick}
+            />
+          ) : null}
+          {automationsSupported ? (
+            <SidebarUtilityItem
+              icon={<CalendarClockIcon />}
+              label="Automations"
+              onClick={handleAutomationsClick}
+              fullWidth
             />
           ) : null}
         </>

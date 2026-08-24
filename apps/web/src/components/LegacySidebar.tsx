@@ -234,7 +234,7 @@ import {
   type WorkSidebarSection,
 } from "../hooks/useWorkSidebarView";
 
-const WORK_RECENTS_PROJECT_KEY = "work:recents";
+const RECENTS_PROJECT_KEY = "work:recents";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
@@ -1291,7 +1291,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     toggleProjectPinned,
   } = props;
   const appExperience = useUiStateStore((state) => state.appExperience);
-  const isWorkRecents = appExperience === "work" && project.projectKey === WORK_RECENTS_PROJECT_KEY;
+  const isRecentsProject = project.projectKey === RECENTS_PROJECT_KEY;
   const threadSortOrder = useClientSettings<SidebarThreadSortOrder>(
     (settings) => settings.sidebarThreadSortOrder,
   );
@@ -1411,7 +1411,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const storedProjectExpanded = useUiStateStore((state) =>
     resolveProjectExpanded(state.projectExpandedById, projectPreferenceKeys),
   );
-  const projectExpanded = isWorkRecents || storedProjectExpanded;
+  const projectExpanded = isRecentsProject || storedProjectExpanded;
   const threadLastVisitedAts = useUiStateStore(
     useShallow((state) =>
       projectThreads.map(
@@ -2294,7 +2294,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (threads.length === 0) return;
 
       const taskLabel = `task${threads.length === 1 ? "" : "s"}`;
-      const projectLabel = isWorkRecents ? "" : ` in "${project.displayName}"`;
+      const projectLabel = isRecentsProject ? "" : ` in "${project.displayName}"`;
       const confirmation = await settlePromise(() =>
         ensureLocalApi().dialogs.confirm(
           [
@@ -2364,7 +2364,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         }),
       );
     },
-    [archiveThread, isWorkRecents, project.displayName],
+    [archiveThread, isRecentsProject, project.displayName],
   );
 
   const cancelRename = useCallback(() => {
@@ -2532,7 +2532,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         thread.worktreePath ?? threadProject?.workspaceRoot ?? project.workspaceRoot ?? null;
       const clicked = await api.contextMenu.show(
         [
-          ...(appExperience === "work" && isWorkRecents
+          ...(isRecentsProject
             ? [
                 {
                   id: thread.pinnedAt != null ? "unpin" : "pin",
@@ -2649,7 +2649,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       copyThreadIdToClipboard,
       deleteThread,
       handleNewThread,
-      isWorkRecents,
+      isRecentsProject,
       markThreadUnread,
       memberProjectByScopedKey,
       pinThread,
@@ -2661,7 +2661,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
   return (
     <>
-      {isWorkRecents ? null : (
+      {isRecentsProject ? null : (
         <div className="group/project-header relative">
           <SidebarMenuButton
             ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
@@ -2811,7 +2811,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         completedExpanded={completedExpanded}
         onCompletedExpandedChange={setCompletedExpanded}
         archiveCompletedThreads={archiveCompletedThreads}
-        canToggleThreadPin={isWorkRecents}
+        canToggleThreadPin={isRecentsProject}
         toggleThreadPin={toggleThreadPin}
         showEmptyThreadState={showEmptyThreadState}
         shouldShowThreadPanel={shouldShowThreadPanel}
@@ -3309,7 +3309,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     WorkPinnedProjectKeysSchema,
   );
   const sectionOrder = normalizeWorkSidebarSectionOrder(storedSectionOrder);
-  const projectsSectionExpanded = appExperience === "work" ? projectsExpanded : true;
+  const projectsSectionExpanded = projectsExpanded;
   const {
     showArm64IntelBuildWarning,
     arm64IntelBuildWarningDescription,
@@ -3352,7 +3352,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   } = props;
   const pinnedProjectKeySet = useMemo(() => new Set(pinnedProjectKeys), [pinnedProjectKeys]);
   const allNamedProjects = useMemo(
-    () => sortedProjects.filter((project) => project.projectKey !== WORK_RECENTS_PROJECT_KEY),
+    () => sortedProjects.filter((project) => project.projectKey !== RECENTS_PROJECT_KEY),
     [sortedProjects],
   );
   const pinnedNamedProjects = useMemo(() => {
@@ -3369,7 +3369,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     [allNamedProjects, pinnedProjectKeySet],
   );
   const recentProject = sortedProjects.find(
-    (project) => project.projectKey === WORK_RECENTS_PROJECT_KEY,
+    (project) => project.projectKey === RECENTS_PROJECT_KEY,
   );
   const hasPinnedItems = pinnedNamedProjects.length > 0 || pinnedRecentTaskCount > 0;
   const toggleProjectPinned = useCallback(
@@ -3430,7 +3430,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
         // header and would otherwise paint across the search row's outline.
         <SidebarGroup className="relative z-[1] px-2 pt-2 pb-1">
           <SidebarMenu>
-            {appExperience === "work" ? (
+            {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={() => {
@@ -3438,10 +3438,10 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                   }}
                 >
                   <SquarePenIcon />
-                  <span>New task</span>
+                  <span>{appExperience === "work" ? "New task" : "New thread"}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            ) : null}
+            }
             <SidebarMenuItem>
               <CommandDialogTrigger
                 render={
@@ -3491,7 +3491,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
       ) : null}
       <LocalSecondaryStatus />
       <SidebarGroup className="flex flex-col px-2 py-2">
-        {appExperience === "work" && hasPinnedItems ? (
+        {hasPinnedItems ? (
           <div className="mb-4">
             <div className="mb-1 px-2 text-xs font-medium text-sidebar-muted-foreground/80">
               Pinned
@@ -3566,33 +3566,27 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           <SortableContext items={sectionOrder} strategy={verticalListSortingStrategy}>
             <SortableWorkSection
               section="projects"
-              order={appExperience === "work" ? sectionOrder.indexOf("projects") : 0}
-              disabled={appExperience !== "work"}
+              order={sectionOrder.indexOf("projects")}
+              disabled={false}
             >
               {(sectionDragHandleProps) => (
                 <>
                   <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
-                    {appExperience === "work" ? (
-                      <button
-                        ref={sectionDragHandleProps.setActivatorNodeRef}
-                        type="button"
-                        aria-expanded={projectsSectionExpanded}
-                        onPointerDown={(event) => {
-                          sectionDragHandleProps.listeners?.onPointerDown?.(event);
-                        }}
-                        onClick={() => setProjectsExpanded((expanded) => !expanded)}
-                        className="-ml-1 inline-flex h-6 cursor-grab items-center gap-1 rounded px-1 text-xs font-medium text-sidebar-muted-foreground/80 hover:bg-sidebar-row-hover hover:text-sidebar-foreground active:cursor-grabbing"
-                      >
-                        <ChevronRightIcon
-                          className={`size-3 transition-transform ${projectsSectionExpanded ? "rotate-90" : ""}`}
-                        />
-                        Projects
-                      </button>
-                    ) : (
-                      <span className="text-xs font-medium text-sidebar-muted-foreground/80">
-                        Projects
-                      </span>
-                    )}
+                    <button
+                      ref={sectionDragHandleProps.setActivatorNodeRef}
+                      type="button"
+                      aria-expanded={projectsSectionExpanded}
+                      onPointerDown={(event) => {
+                        sectionDragHandleProps.listeners?.onPointerDown?.(event);
+                      }}
+                      onClick={() => setProjectsExpanded((expanded) => !expanded)}
+                      className="-ml-1 inline-flex h-6 cursor-grab items-center gap-1 rounded px-1 text-xs font-medium text-sidebar-muted-foreground/80 hover:bg-sidebar-row-hover hover:text-sidebar-foreground active:cursor-grabbing"
+                    >
+                      <ChevronRightIcon
+                        className={`size-3 transition-transform ${projectsSectionExpanded ? "rotate-90" : ""}`}
+                      />
+                      Projects
+                    </button>
                     <div className="flex items-center gap-1">
                       {appExperience !== "work" ? (
                         <ProjectSortMenu
@@ -3739,7 +3733,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               )}
             </SortableWorkSection>
 
-            {appExperience === "work" ? (
+            {
               <SortableWorkSection section="recents" order={sectionOrder.indexOf("recents")}>
                 {(sectionDragHandleProps) => (
                   <>
@@ -3766,7 +3760,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                               <Button
                                 size="icon-xs"
                                 variant="ghost-muted"
-                                aria-label="New task"
+                                aria-label={appExperience === "work" ? "New task" : "New thread"}
                                 className="size-6 [--control-icon-color:currentColor] text-icon-muted"
                                 onClick={() => void handleNewThread(null)}
                               />
@@ -3774,7 +3768,9 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                           >
                             <SquarePenIcon className="size-3.5" />
                           </TooltipTrigger>
-                          <TooltipPopup side="right">New task</TooltipPopup>
+                          <TooltipPopup side="right">
+                            {appExperience === "work" ? "New task" : "New thread"}
+                          </TooltipPopup>
                         </Tooltip>
                       </div>
                     </div>
@@ -3816,14 +3812,16 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                         </SidebarMenu>
                       ) : (
                         <div className="px-2 py-3 text-xs text-secondary-label">
-                          No recent tasks yet
+                          {appExperience === "work"
+                            ? "No recent tasks yet"
+                            : "No recent threads yet"}
                         </div>
                       )
                     ) : null}
                   </>
                 )}
               </SortableWorkSection>
-            ) : null}
+            }
           </SortableContext>
         </DndContext>
       </SidebarGroup>
@@ -3932,11 +3930,9 @@ export default function LegacySidebar() {
       settings: projectGroupingSettings,
       primaryEnvironmentId,
     });
-    if (appExperience === "work") {
-      for (const project of orderedProjects) {
-        if (isStandaloneWorkProject(project)) {
-          mapping.set(derivePhysicalProjectKey(project), WORK_RECENTS_PROJECT_KEY);
-        }
+    for (const project of orderedProjects) {
+      if (isStandaloneWorkProject(project)) {
+        mapping.set(derivePhysicalProjectKey(project), RECENTS_PROJECT_KEY);
       }
     }
     return mapping;
@@ -3960,8 +3956,6 @@ export default function LegacySidebar() {
       resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
       isDesktopLocalEnvironment: (environmentId) => desktopLocalEnvironmentIds.has(environmentId),
     });
-    if (appExperience !== "work") return groups;
-
     const recentGroups = groups.filter((group) =>
       group.memberProjects.every(isStandaloneWorkProject),
     );
@@ -3973,7 +3967,7 @@ export default function LegacySidebar() {
       ...groups.filter((group) => !recentGroups.includes(group)),
       {
         ...representative,
-        projectKey: WORK_RECENTS_PROJECT_KEY,
+        projectKey: RECENTS_PROJECT_KEY,
         displayName: "Recents",
         groupedProjectCount: 1,
         memberProjects,
@@ -4041,7 +4035,7 @@ export default function LegacySidebar() {
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
   const pinnedRecentTaskCount = useMemo(
     () =>
-      (threadsByProjectKey.get(WORK_RECENTS_PROJECT_KEY) ?? []).filter(
+      (threadsByProjectKey.get(RECENTS_PROJECT_KEY) ?? []).filter(
         (thread) => thread.archivedAt === null && thread.pinnedAt != null,
       ).length,
     [threadsByProjectKey],
@@ -4183,10 +4177,9 @@ export default function LegacySidebar() {
       const resolvedProject = sidebarProjectByKey.get(project.id);
       return resolvedProject ? [resolvedProject] : [];
     });
-    if (appExperience !== "work") return sorted;
     return [
-      ...sorted.filter((project) => project.projectKey !== WORK_RECENTS_PROJECT_KEY),
-      ...sorted.filter((project) => project.projectKey === WORK_RECENTS_PROJECT_KEY),
+      ...sorted.filter((project) => project.projectKey !== RECENTS_PROJECT_KEY),
+      ...sorted.filter((project) => project.projectKey === RECENTS_PROJECT_KEY),
     ];
   }, [
     appExperience,

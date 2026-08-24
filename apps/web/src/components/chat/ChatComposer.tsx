@@ -7,6 +7,7 @@ import type {
   ProviderInteractionMode,
   ResolvedKeybindingsConfig,
   RuntimeMode,
+  ScopedProjectRef,
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
@@ -99,6 +100,7 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { WorkComplexityControl } from "../work/WorkComplexityControl";
+import { ProjectPickerMenu } from "./ProjectPickerMenu";
 import {
   DEFAULT_WORK_CODEX_INSTANCE_ID,
   DEFAULT_WORK_COMPLEXITY,
@@ -237,7 +239,9 @@ import { toastManager } from "../ui/toast";
 import {
   BotIcon,
   CircleAlertIcon,
+  ChevronDownIcon,
   FileTextIcon,
+  FolderIcon,
   PencilRulerIcon,
   type LucideIcon,
   LockIcon,
@@ -554,6 +558,14 @@ export interface ChatComposerProps {
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
   appExperience: AppExperience;
+  activeProjectTitle: string | null;
+  activeProjectValue: string | null;
+  projectOptions: ReadonlyArray<{
+    ref: ScopedProjectRef;
+    value: string;
+    label: string;
+  }>;
+  projectPickerEnabled: boolean;
 
   // Session phase
   phase: SessionPhase;
@@ -647,6 +659,48 @@ export interface ChatComposerProps {
   scheduleComposerFocus: () => void;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
+  onProjectSelect: (projectRef: ScopedProjectRef | null) => void;
+}
+
+function ComposerProjectControl(props: {
+  activeProjectTitle: string | null;
+  activeProjectValue: string | null;
+  enabled: boolean;
+  options: ChatComposerProps["projectOptions"];
+  onSelect: (projectRef: ScopedProjectRef | null) => void;
+}) {
+  const label = props.activeProjectTitle ?? "No project";
+  const control = (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="max-w-44 shrink-0 gap-1.5 px-2 text-muted-foreground"
+      aria-label={`Project: ${label}`}
+    >
+      <FolderIcon className="size-4" />
+      <span className="truncate">{label}</span>
+      {props.enabled ? <ChevronDownIcon className="size-3" /> : null}
+    </Button>
+  );
+
+  if (!props.enabled) {
+    return (
+      <Tooltip>
+        <TooltipTrigger render={control} />
+        <TooltipPopup side="top">Project: {label}</TooltipPopup>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <ProjectPickerMenu
+      activeValue={props.activeProjectValue}
+      options={props.options}
+      trigger={control}
+      onSelect={props.onSelect}
+    />
+  );
 }
 
 // --------------------------------------------------------------------------
@@ -668,6 +722,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     forceExpandedOnMobile,
     projectSelectionRequired,
     appExperience,
+    activeProjectTitle,
+    activeProjectValue,
+    projectOptions,
+    projectPickerEnabled,
     phase,
     isConnecting,
     isSendBusy,
@@ -722,6 +780,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     scheduleComposerFocus,
     setThreadError,
     onExpandImage,
+    onProjectSelect,
   } = props;
   const isSendDisabled = sendDisabledReason !== null;
 
@@ -3381,6 +3440,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
               >
                 <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <ComposerProjectControl
+                    activeProjectTitle={activeProjectTitle}
+                    activeProjectValue={activeProjectValue}
+                    enabled={projectPickerEnabled}
+                    options={projectOptions}
+                    onSelect={onProjectSelect}
+                  />
+                  <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
                   {noProviderAvailable ? (
                     <Button
                       type="button"

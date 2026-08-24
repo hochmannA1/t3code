@@ -103,13 +103,13 @@ export function useNewThreadHandler() {
         setModelSelection,
       } = useComposerDraftStore.getState();
 
-      // Work starts without asking the user to understand projects. The draft
-      // carries only an environment until its first message allocates a real
-      // standalone project on that environment.
-      if (appExperience === "work" && projectRef === null) {
+      // A projectless draft carries only an environment until its first
+      // message allocates a standalone project on that environment.
+      if (projectRef === null) {
         if (primaryEnvironmentId === null) {
           return null;
         }
+        const currentRouteTarget = getCurrentRouteTarget();
         const draftId = newDraftId();
         const threadId = newThreadId();
         const placeholderProjectRef = scopeProjectRef(primaryEnvironmentId, newProjectId());
@@ -128,14 +128,24 @@ export function useNewThreadHandler() {
           },
         );
         applyStickyState(draftId);
-        const stickyDraft = getComposerDraft(draftId);
-        const stickySelection = stickyDraft?.activeProvider
-          ? stickyDraft.modelSelectionByProvider[stickyDraft.activeProvider]
-          : undefined;
-        if (resolveWorkComplexity(stickySelection) === null) {
-          setModelSelection(draftId, createWorkModelSelection("normal"), {
-            replaceOptions: true,
-          });
+        if (appExperience === "work") {
+          const stickyDraft = getComposerDraft(draftId);
+          const stickySelection = stickyDraft?.activeProvider
+            ? stickyDraft.modelSelectionByProvider[stickyDraft.activeProvider]
+            : undefined;
+          if (resolveWorkComplexity(stickySelection) === null) {
+            setModelSelection(draftId, createWorkModelSelection("normal"), {
+              replaceOptions: true,
+            });
+          }
+        }
+        if (
+          options?.carryComposerContent === true &&
+          currentRouteTarget?.kind === "draft" &&
+          currentRouteTarget.draftId !== draftId &&
+          composerDraftHasUserContent(getComposerDraft(currentRouteTarget.draftId))
+        ) {
+          moveComposerPromptAndImages(currentRouteTarget.draftId, draftId);
         }
         await router.navigate({
           to: "/draft/$draftId",
