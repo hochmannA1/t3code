@@ -27,6 +27,7 @@ import {
   type EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import {
   changeRequestAutoSettles,
   effectiveSettled,
@@ -1856,7 +1857,9 @@ function ChatViewContent(props: ChatViewProps) {
   const composerProjectOptions = useMemo(
     () =>
       allProjects
-        .filter((project) => project.environmentId === environmentId)
+        .filter(
+          (project) => project.environmentId === environmentId && !isStandaloneProject(project),
+        )
         .toSorted((left, right) => left.title.localeCompare(right.title))
         .map((project) => ({
           ref: scopeProjectRef(project.environmentId, project.id),
@@ -6783,7 +6786,11 @@ function ChatViewContent(props: ChatViewProps) {
                       >
                         <DraftHeroHeadline
                           activeProjectRef={activeProjectRef}
-                          activeProjectTitle={activeProject?.title ?? null}
+                          activeProjectTitle={
+                            activeProject && !isStandaloneProject(activeProject)
+                              ? activeProject.title
+                              : null
+                          }
                         />
                       </div>
                       <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
@@ -6831,7 +6838,11 @@ function ChatViewContent(props: ChatViewProps) {
                               !isStandaloneDraft
                             }
                             appExperience={appExperience}
-                            activeProjectTitle={activeProject?.title ?? null}
+                            activeProjectTitle={
+                              activeProject && !isStandaloneProject(activeProject)
+                                ? activeProject.title
+                                : null
+                            }
                             activeProjectValue={
                               activeProjectRef ? scopedProjectKey(activeProjectRef) : null
                             }

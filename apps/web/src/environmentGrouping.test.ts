@@ -323,6 +323,37 @@ describe("environment grouping", () => {
     expect(entries[1]?.group.displayName).toBe("separate");
   });
 
+  it("excludes standalone task workspaces from project pickers", () => {
+    const named = makeProject({
+      id: ProjectId.make("project-named"),
+      title: "Customer portal",
+      workspaceRoot: "/work/customer-portal",
+    });
+    const standalone = makeProject({
+      id: ProjectId.make("project-standalone"),
+      title: "summarize-billing-page",
+      workspaceRoot: "/home/user/t3work/projects/2026-08-24/summarize-billing-page",
+    });
+    const groups = buildSidebarProjectSnapshots({
+      projects: [standalone, named],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+
+    const entries = buildSidebarProjectPickerEntries({
+      groups,
+      preferredProjectRef: {
+        environmentId: primaryEnvironmentId,
+        projectId: standalone.id,
+      },
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.targetProject.id).toBe(named.id);
+    expect(entries[0]?.isPreferred).toBe(false);
+  });
+
   it("keeps manual project order when building grouped sidebar entries", () => {
     const primary = makeProject({ repositoryIdentity });
     const remote = makeProject({

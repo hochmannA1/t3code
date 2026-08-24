@@ -1967,12 +1967,10 @@ export default function Sidebar() {
   );
   const selectableProjectGroups = useMemo(
     () =>
-      appExperience === "work"
-        ? projectGroups.filter((group) =>
-            group.memberProjects.some((project) => !isStandaloneWorkProject(project)),
-          )
-        : projectGroups,
-    [appExperience, projectGroups],
+      projectGroups.filter((group) =>
+        group.memberProjects.some((project) => !isStandaloneWorkProject(project)),
+      ),
+    [projectGroups],
   );
   const projectTaskCountByKey = useMemo(() => {
     const logicalProjectKeyByMember = new Map<string, string>();

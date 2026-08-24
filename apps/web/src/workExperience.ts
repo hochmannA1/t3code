@@ -5,6 +5,7 @@ import {
   type ProviderInstanceId,
 } from "@t3tools/contracts";
 import { createModelSelection, getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
@@ -18,21 +19,7 @@ export function isAppExperience(value: unknown): value is AppExperience {
   return value === "code" || value === "work";
 }
 
-export function isStandaloneWorkProject(project: {
-  readonly title: string;
-  readonly workspaceRoot: string;
-}): boolean {
-  const segments = project.workspaceRoot.split(/[\\/]+/u).filter(Boolean);
-  const directoryName = segments.at(-1);
-  const dateDirectory = segments.at(-2);
-  return (
-    directoryName === project.title &&
-    directoryName.length <= 64 &&
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(directoryName) &&
-    dateDirectory !== undefined &&
-    /^\d{4}-\d{2}-\d{2}$/u.test(dateDirectory)
-  );
-}
+export const isStandaloneWorkProject = isStandaloneProject;
 
 export const WORK_COMPLEXITIES = ["simple", "normal", "hard"] as const;
 export type WorkComplexity = (typeof WORK_COMPLEXITIES)[number];

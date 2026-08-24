@@ -7,6 +7,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import { AsyncResult } from "effect/unstable/reactivity";
 import {
   deriveProjectGroupingOverrideKey,
@@ -139,7 +140,9 @@ export function useSettingsProjectGroups(): SidebarProjectSnapshot[] {
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
-      }).sort((a, b) => a.displayName.localeCompare(b.displayName)),
+      })
+        .filter((group) => group.memberProjects.some((project) => !isStandaloneProject(project)))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
     [environmentLabelById, primaryEnvironmentId, projectGroupingSettings, projects],
   );
 }

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   buildHomeProjectScopes,
   buildHomeThreadGroups,
+  filterSelectableProjectScopes,
   sortHomeProjectScopes,
 } from "./homeThreadList";
 
@@ -72,6 +73,31 @@ function buildGroups(
 }
 
 describe("buildHomeThreadGroups", () => {
+  it("keeps standalone tasks out of project selection without deleting their scopes", () => {
+    const environmentId = EnvironmentId.make("environment-local");
+    const named = makeProject({
+      environmentId,
+      id: ProjectId.make("project-named"),
+      title: "Customer portal",
+    });
+    const standalone = makeProject({
+      environmentId,
+      id: ProjectId.make("project-standalone"),
+      title: "summarize-billing-page",
+      workspaceRoot: "/home/user/t3work/projects/2026-08-24/summarize-billing-page",
+    });
+    const scopes = buildHomeProjectScopes({
+      projects: [standalone, named],
+      environmentId: null,
+      projectGroupingMode: "repository",
+    });
+
+    expect(scopes).toHaveLength(2);
+    expect(filterSelectableProjectScopes(scopes).map((scope) => scope.representative.id)).toEqual([
+      named.id,
+    ]);
+  });
+
   it("builds one v2 scope for the same repository across environments", () => {
     const localEnvironmentId = EnvironmentId.make("environment-local");
     const remoteEnvironmentId = EnvironmentId.make("environment-remote");

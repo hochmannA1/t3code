@@ -1,4 +1,5 @@
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
+import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import { buildProjectGroups, type ProjectGroupingSettings } from "./logicalProject";
 import type { Project } from "./types";
 
@@ -119,29 +120,46 @@ export function buildSidebarProjectPickerEntries(input: {
   preferredProjectRef: ScopedProjectRef | null;
 }) {
   const entries = input.groups.flatMap((group): SidebarProjectPickerEntry[] => {
-    const isPreferred = input.preferredProjectRef
-      ? group.memberProjectRefs.some(
-          (projectRef) =>
-            projectRef.environmentId === input.preferredProjectRef?.environmentId &&
-            projectRef.projectId === input.preferredProjectRef.projectId,
+    const selectableProjects = group.memberProjects.filter(
+      (project) => !isStandaloneProject(project),
+    );
+    if (selectableProjects.length === 0) return [];
+    const preferredProjectRecord = input.preferredProjectRef
+      ? group.memberProjects.find(
+          (project) =>
+            project.environmentId === input.preferredProjectRef?.environmentId &&
+            project.id === input.preferredProjectRef.projectId,
         )
+      : undefined;
+    const isPreferred = input.preferredProjectRef
+      ? selectableProjects.some(
+          (project) =>
+            project.environmentId === input.preferredProjectRef?.environmentId &&
+            project.id === input.preferredProjectRef.projectId,
+        ) ||
+        (preferredProjectRecord === undefined &&
+          group.memberProjectRefs.some(
+            (projectRef) =>
+              projectRef.environmentId === input.preferredProjectRef?.environmentId &&
+              projectRef.projectId === input.preferredProjectRef.projectId,
+          ))
       : false;
     const preferredProject = isPreferred
-      ? (group.memberProjects.find(
+      ? (selectableProjects.find(
           (project) =>
             project.environmentId === input.preferredProjectRef?.environmentId &&
             project.id === input.preferredProjectRef?.projectId,
         ) ??
-        group.memberProjects.find(
+        selectableProjects.find(
           (project) => project.environmentId === input.preferredProjectRef?.environmentId,
         ))
       : null;
     const targetProject =
       preferredProject ??
-      group.memberProjects.find(
+      selectableProjects.find(
         (project) => project.environmentId === group.environmentId && project.id === group.id,
       ) ??
-      group.memberProjects[0];
+      selectableProjects[0];
     if (!targetProject) return [];
 
     return [{ group, targetProject, isPreferred }];

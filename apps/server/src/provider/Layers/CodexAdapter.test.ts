@@ -619,6 +619,122 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("marks commentary-only Codex completions as incomplete", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-commentary-only-turn"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "turn/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        payload: {
+          threadId: "thread-1",
+          turn: {
+            id: "turn-1",
+            status: "completed",
+            itemsView: "full",
+            items: [
+              {
+                type: "agentMessage",
+                id: "msg-progress",
+                phase: "commentary",
+                text: "I will convert the page now.",
+              },
+            ],
+          },
+        },
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "turn.completed") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.state, "failed");
+      NodeAssert.match(firstEvent.value.payload.errorMessage ?? "", /without a final response/u);
+    }),
+  );
+
+  it.effect("keeps final-answer Codex completions completed", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-final-answer-turn"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "turn/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        payload: {
+          threadId: "thread-1",
+          turn: {
+            id: "turn-1",
+            status: "completed",
+            itemsView: "full",
+            items: [
+              {
+                type: "agentMessage",
+                id: "msg-final",
+                phase: "final_answer",
+                text: "Done.",
+              },
+            ],
+          },
+        },
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "turn.completed") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.state, "completed");
+      NodeAssert.equal(firstEvent.value.payload.errorMessage, undefined);
+    }),
+  );
+
+  it.effect("keeps legacy unphased Codex completions completed", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-unphased-turn"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "turn/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        payload: {
+          threadId: "thread-1",
+          turn: {
+            id: "turn-1",
+            status: "completed",
+            itemsView: "full",
+            items: [{ type: "agentMessage", id: "msg-legacy", text: "Done." }],
+          },
+        },
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "turn.completed") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.state, "completed");
+      NodeAssert.equal(firstEvent.value.payload.errorMessage, undefined);
+    }),
+  );
+
   it.effect("labels MCP lifecycle entries with server and tool names", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

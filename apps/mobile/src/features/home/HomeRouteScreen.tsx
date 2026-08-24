@@ -16,7 +16,7 @@ import { AndroidHomeFabLayout } from "./AndroidHomeFab";
 import { HomeScreen } from "./HomeScreen";
 import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
-import { buildHomeProjectScopes } from "./homeThreadList";
+import { buildHomeProjectScopes, filterSelectableProjectScopes } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { getConnectionAwareBrandHeaderOptions } from "./WorkspaceConnectionTitle";
@@ -81,11 +81,13 @@ export function HomeRouteScreen() {
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const projectFilterOptions = useMemo(
     () =>
-      buildHomeProjectScopes({
-        projects,
-        environmentId: selectedEnvironmentId,
-        projectGroupingMode: listOptions.projectGroupingMode,
-      }).map((scope) => ({
+      filterSelectableProjectScopes(
+        buildHomeProjectScopes({
+          projects,
+          environmentId: selectedEnvironmentId,
+          projectGroupingMode: listOptions.projectGroupingMode,
+        }),
+      ).map((scope) => ({
         key: scope.key,
         label: scope.title,
       })),

@@ -206,6 +206,17 @@ function toTurnStatus(
   }
 }
 
+function completedWithoutFinalAnswer(
+  turn: EffectCodexSchema.V2TurnCompletedNotification["turn"],
+): boolean {
+  const agentMessages = turn.items.filter((item) => item.type === "agentMessage");
+  return (
+    turn.status === "completed" &&
+    agentMessages.length > 0 &&
+    agentMessages.every((item) => item.phase === "commentary")
+  );
+}
+
 function normalizeItemType(raw: string | undefined | null): string {
   const type = trimText(raw);
   if (!type) return "item";
@@ -1038,13 +1049,21 @@ function mapToRuntimeEvents(
       return [];
     }
     const errorMessage = trimText(payload.turn.error?.message);
+    const missingFinalAnswer = completedWithoutFinalAnswer(payload.turn);
     return [
       {
         ...runtimeEventBase(event, canonicalThreadId),
         type: "turn.completed",
         payload: {
-          state: toTurnStatus(payload.turn.status),
-          ...(errorMessage ? { errorMessage } : {}),
+          state: missingFinalAnswer ? "failed" : toTurnStatus(payload.turn.status),
+          ...(errorMessage
+            ? { errorMessage }
+            : missingFinalAnswer
+              ? {
+                  errorMessage:
+                    "Codex ended the turn after a progress update without a final response.",
+                }
+              : {}),
         },
       },
     ];

@@ -1,5 +1,6 @@
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import { ChevronDownIcon, FolderIcon } from "lucide-react";
 import { useMemo } from "react";
 
@@ -73,8 +74,11 @@ export function DraftHeroHeadline({
     activeProjectRef === null
       ? null
       : (projectGroups.find((group) =>
-          group.memberProjectRefs.some(
-            (projectRef) => scopedProjectKey(projectRef) === scopedProjectKey(activeProjectRef),
+          group.memberProjects.some(
+            (project) =>
+              !isStandaloneProject(project) &&
+              scopedProjectKey(scopeProjectRef(project.environmentId, project.id)) ===
+                scopedProjectKey(activeProjectRef),
           ),
         ) ?? null);
   const activeProjectKey = activeProjectGroup?.projectKey ?? null;

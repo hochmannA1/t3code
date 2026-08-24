@@ -56,7 +56,11 @@ import {
   type HomeGroupDisplayState,
   type HomeListItem,
 } from "../home/homeListItems";
-import { buildHomeProjectScopes, buildHomeThreadGroups } from "../home/homeThreadList";
+import {
+  buildHomeProjectScopes,
+  buildHomeThreadGroups,
+  filterSelectableProjectScopes,
+} from "../home/homeThreadList";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
@@ -281,7 +285,7 @@ function ThreadNavigationSidebarPane(
   );
   const projectFilterOptions = useMemo(
     () =>
-      projectScopes.map((scope) => ({
+      filterSelectableProjectScopes(projectScopes).map((scope) => ({
         key: scope.key,
         label: scope.title,
       })),
