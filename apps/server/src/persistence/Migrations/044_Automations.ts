@@ -5,7 +5,7 @@ export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
   yield* sql`
-    CREATE TABLE automations (
+    CREATE TABLE IF NOT EXISTS automations (
       automation_id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       name TEXT NOT NULL,
@@ -30,18 +30,18 @@ export default Effect.gen(function* () {
   `;
 
   yield* sql`
-    CREATE INDEX automations_project_updated_idx
+    CREATE INDEX IF NOT EXISTS automations_project_updated_idx
     ON automations(project_id, updated_at DESC, automation_id)
   `;
 
   yield* sql`
-    CREATE INDEX automations_due_idx
+    CREATE INDEX IF NOT EXISTS automations_due_idx
     ON automations(next_run_at, automation_id)
     WHERE status = 'active' AND next_run_at IS NOT NULL
   `;
 
   yield* sql`
-    CREATE TABLE automation_runs (
+    CREATE TABLE IF NOT EXISTS automation_runs (
       run_id TEXT PRIMARY KEY,
       automation_id TEXT NOT NULL REFERENCES automations(automation_id) ON DELETE CASCADE,
       occurrence_key TEXT NOT NULL,
@@ -60,18 +60,18 @@ export default Effect.gen(function* () {
   `;
 
   yield* sql`
-    CREATE UNIQUE INDEX automation_runs_one_active_idx
+    CREATE UNIQUE INDEX IF NOT EXISTS automation_runs_one_active_idx
     ON automation_runs(automation_id)
     WHERE status IN ('pending', 'waiting-for-thread', 'running')
   `;
 
   yield* sql`
-    CREATE INDEX automation_runs_history_idx
+    CREATE INDEX IF NOT EXISTS automation_runs_history_idx
     ON automation_runs(automation_id, created_at DESC, run_id DESC)
   `;
 
   yield* sql`
-    CREATE TABLE automation_mirror_outbox (
+    CREATE TABLE IF NOT EXISTS automation_mirror_outbox (
       automation_id TEXT PRIMARY KEY,
       revision INTEGER NOT NULL,
       operation TEXT NOT NULL CHECK (operation IN ('put', 'delete')),
@@ -85,7 +85,7 @@ export default Effect.gen(function* () {
   `;
 
   yield* sql`
-    CREATE INDEX automation_mirror_outbox_due_idx
+    CREATE INDEX IF NOT EXISTS automation_mirror_outbox_due_idx
     ON automation_mirror_outbox(next_attempt_at, automation_id)
   `;
 });
