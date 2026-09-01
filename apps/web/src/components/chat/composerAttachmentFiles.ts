@@ -69,10 +69,14 @@ export function classifyComposerAttachmentFile(
   if (inferImageMimeTypeForUnknownFile(file)) {
     return "image";
   }
-  if (!file.type.toLowerCase().startsWith("image/")) {
+  const mimeType = file.type.toLowerCase();
+  if (mimeType === "image/svg+xml") {
     return "file";
   }
-  return isProviderSendTurnSupportedImageMimeType(file.type) ? "image" : "unsupported-image";
+  if (!mimeType.startsWith("image/")) {
+    return "file";
+  }
+  return isProviderSendTurnSupportedImageMimeType(mimeType) ? "image" : "unsupported-image";
 }
 
 /** Byte limit for adding a generic file to the local composer draft. */

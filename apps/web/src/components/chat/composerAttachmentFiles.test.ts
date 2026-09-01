@@ -18,9 +18,9 @@ describe("composer attachment files", () => {
     expect(classifyComposerAttachmentFile({ name: "photo.heic", type: "" })).toBe("image");
   });
 
-  it("rejects unsupported image types instead of attaching them as generic files", () => {
+  it("attaches SVGs as generic files while rejecting unsupported raster images", () => {
     expect(classifyComposerAttachmentFile({ name: "diagram.svg", type: "image/svg+xml" })).toBe(
-      "unsupported-image",
+      "file",
     );
     expect(classifyComposerAttachmentFile({ name: "photo.tiff", type: "image/tiff" })).toBe(
       "unsupported-image",
@@ -41,20 +41,21 @@ describe("composer attachment files", () => {
     ).toBe(false);
   });
 
-  it("claims unsupported image pastes so the composer can report them", () => {
-    const images = [
-      new File(["svg"], "diagram.svg", { type: "image/svg+xml" }),
-      new File(["tiff"], "photo.tiff", { type: "image/tiff" }),
-    ];
+  it("claims unsupported raster image pastes so the composer can report them", () => {
+    const image = new File(["tiff"], "photo.tiff", { type: "image/tiff" });
 
-    for (const image of images) {
-      expect(
-        shouldHandleComposerAttachmentPaste({
-          files: [image],
-          plainText: "Image caption",
-        }),
-      ).toBe(true);
-    }
+    expect(
+      shouldHandleComposerAttachmentPaste({
+        files: [image],
+        plainText: "Image caption",
+      }),
+    ).toBe(true);
+  });
+
+  it("claims file-only SVG pastes through the generic attachment path", () => {
+    const svg = new File(["svg"], "diagram.svg", { type: "image/svg+xml" });
+
+    expect(shouldHandleComposerAttachmentPaste({ files: [svg], plainText: "" })).toBe(true);
   });
 
   it("claims generic file-only pastes so the composer can report validation errors", () => {
