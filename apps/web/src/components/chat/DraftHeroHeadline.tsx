@@ -1,3 +1,4 @@
+import type { DraftId } from "~/composerDraftStore";
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
@@ -17,11 +18,13 @@ import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
 import { ProjectPickerMenu } from "./ProjectPickerMenu";
 
 interface DraftHeroHeadlineProps {
+  readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
 }
 
 export function DraftHeroHeadline({
+  draftId,
   activeProjectRef,
   activeProjectTitle,
 }: DraftHeroHeadlineProps) {
@@ -97,6 +100,7 @@ export function DraftHeroHeadline({
     ) {
       return;
     }
+    if (!draftId) return;
     void handleNewThread(projectRef, {
       replace: true,
       carryComposerContent: true,

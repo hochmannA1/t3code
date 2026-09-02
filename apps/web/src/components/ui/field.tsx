@@ -27,12 +27,6 @@ function FieldLabel({ className, ...props }: FieldPrimitive.Label.Props) {
   );
 }
 
-function FieldItem({ className, ...props }: FieldPrimitive.Item.Props) {
-  return (
-    <FieldPrimitive.Item className={cn("flex", className)} data-slot="field-item" {...props} />
-  );
-}
-
 function FieldDescription({ className, ...props }: FieldPrimitive.Description.Props) {
   return (
     <FieldPrimitive.Description
@@ -43,17 +37,4 @@ function FieldDescription({ className, ...props }: FieldPrimitive.Description.Pr
   );
 }
 
-function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
-  return (
-    <FieldPrimitive.Error
-      className={cn("text-destructive-foreground text-xs", className)}
-      data-slot="field-error"
-      {...props}
-    />
-  );
-}
-
-const FieldControl = FieldPrimitive.Control;
-const FieldValidity = FieldPrimitive.Validity;
-
-export { Field, FieldLabel, FieldDescription, FieldError, FieldControl, FieldItem, FieldValidity };
+export { Field, FieldLabel, FieldDescription };

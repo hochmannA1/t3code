@@ -43,6 +43,7 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 import { useUiStateStore } from "~/uiStateStore";
+import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 
 const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
@@ -80,6 +81,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
+  const searchableItems = useAvailableSettingsSearchItems();
   const visibleNavItems = useMemo(
     () =>
       appExperience === "code"
@@ -94,11 +96,15 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     [visibleNavItems],
   );
   const results = useMemo(
-    () => searchSettings(query).filter((item) => visiblePaths.has(item.to)),
-    [query, visiblePaths],
+    () => searchSettings(query, searchableItems).filter((item) => visiblePaths.has(item.to)),
+    [query, searchableItems, visiblePaths],
   );
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
+
+  useEffect(() => {
+    setActiveResultIndex((index) => Math.min(index, Math.max(results.length - 1, 0)));
+  }, [results.length]);
 
   useEffect(() => {
     const result = results[activeResultIndex];

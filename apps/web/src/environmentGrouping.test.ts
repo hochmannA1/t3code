@@ -323,19 +323,47 @@ describe("environment grouping", () => {
     expect(entries[1]?.group.displayName).toBe("separate");
   });
 
-  it("excludes standalone task workspaces from project pickers", () => {
-    const named = makeProject({
-      id: ProjectId.make("project-named"),
-      title: "Customer portal",
-      workspaceRoot: "/work/customer-portal",
+  it("keeps the current environment when available and falls back otherwise", () => {
+    const currentPrimary = makeProject({ repositoryIdentity });
+    const currentRemote = makeProject({
+      id: ProjectId.make("current-remote"),
+      environmentId: remoteEnvironmentId,
+      repositoryIdentity,
     });
-    const standalone = makeProject({
-      id: ProjectId.make("project-standalone"),
-      title: "summarize-billing-page",
-      workspaceRoot: "/home/user/t3work/projects/2026-08-24/summarize-billing-page",
+    const destinationRepositoryIdentity = {
+      canonicalKey: "github.com/example/destination",
+      locator: {
+        source: "git-remote" as const,
+        remoteName: "origin",
+        remoteUrl: "https://github.com/example/destination.git",
+      },
+    };
+    const destinationPrimary = makeProject({
+      id: ProjectId.make("destination-primary"),
+      title: "destination",
+      workspaceRoot: "/tmp/destination",
+      repositoryIdentity: destinationRepositoryIdentity,
+    });
+    const destinationRemote = makeProject({
+      id: ProjectId.make("destination-remote"),
+      environmentId: remoteEnvironmentId,
+      title: "destination",
+      workspaceRoot: "/remote/destination",
+      repositoryIdentity: destinationRepositoryIdentity,
+    });
+    const fallbackPrimary = makeProject({
+      id: ProjectId.make("fallback-primary"),
+      title: "fallback",
+      workspaceRoot: "/tmp/fallback",
     });
     const groups = buildSidebarProjectSnapshots({
-      projects: [standalone, named],
+      projects: [
+        currentPrimary,
+        currentRemote,
+        destinationPrimary,
+        destinationRemote,
+        fallbackPrimary,
+      ],
       settings: defaultGroupingSettings,
       primaryEnvironmentId,
       resolveEnvironmentLabel: () => null,
@@ -344,14 +372,23 @@ describe("environment grouping", () => {
     const entries = buildSidebarProjectPickerEntries({
       groups,
       preferredProjectRef: {
-        environmentId: primaryEnvironmentId,
-        projectId: standalone.id,
+        environmentId: remoteEnvironmentId,
+        projectId: currentRemote.id,
       },
     });
+    const destination = entries.find(
+      (entry) => entry.group.projectKey === destinationRepositoryIdentity.canonicalKey,
+    );
+    const fallback = entries.find((entry) => entry.group.displayName === "fallback");
 
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.targetProject.id).toBe(named.id);
-    expect(entries[0]?.isPreferred).toBe(false);
+    expect(destination?.targetProject).toMatchObject({
+      environmentId: remoteEnvironmentId,
+      id: destinationRemote.id,
+    });
+    expect(fallback?.targetProject).toMatchObject({
+      environmentId: primaryEnvironmentId,
+      id: fallbackPrimary.id,
+    });
   });
 
   it("keeps manual project order when building grouped sidebar entries", () => {
@@ -384,5 +421,35 @@ describe("environment grouping", () => {
     });
 
     expect(groups.map((group) => group.displayName)).toEqual(["separate", "shared-repo"]);
+  });
+  it("excludes standalone task workspaces from project pickers", () => {
+    const named = makeProject({
+      id: ProjectId.make("project-named"),
+      title: "Customer portal",
+      workspaceRoot: "/work/customer-portal",
+    });
+    const standalone = makeProject({
+      id: ProjectId.make("project-standalone"),
+      title: "summarize-billing-page",
+      workspaceRoot: "/home/user/t3work/projects/2026-08-24/summarize-billing-page",
+    });
+    const groups = buildSidebarProjectSnapshots({
+      projects: [standalone, named],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+
+    const entries = buildSidebarProjectPickerEntries({
+      groups,
+      preferredProjectRef: {
+        environmentId: primaryEnvironmentId,
+        projectId: standalone.id,
+      },
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.targetProject.id).toBe(named.id);
+    expect(entries[0]?.isPreferred).toBe(false);
   });
 });
