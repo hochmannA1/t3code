@@ -1,3 +1,4 @@
+import { MemoryService } from "../../memory/MemoryService.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -160,6 +161,7 @@ describe("ProviderCommandReactor", () => {
   });
 
   async function createHarness(input?: {
+    readonly memoryContext?: string;
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
@@ -310,6 +312,9 @@ describe("ProviderCommandReactor", () => {
         pr: null,
       }),
     );
+    const contextForThread = vi.fn<MemoryService["Service"]["contextForThread"]>(() =>
+      Effect.succeed(input?.memoryContext ?? ""),
+    );
     const generateBranchName = vi.fn<TextGeneration["Service"]["generateBranchName"]>((_) =>
       Effect.fail(
         new TextGenerationError({
@@ -418,6 +423,7 @@ describe("ProviderCommandReactor", () => {
       }),
     ).pipe(Layer.provide(orchestrationLayer));
     const layer = ProviderCommandReactorLive.pipe(
+      Layer.provideMerge(Layer.mock(MemoryService)({ contextForThread })),
       Layer.provideMerge(reactorOrchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
@@ -543,6 +549,7 @@ describe("ProviderCommandReactor", () => {
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
+      contextForThread,
       runtimeSessions,
       stateDir,
       drain,
@@ -552,6 +559,54 @@ describe("ProviderCommandReactor", () => {
       },
     };
   }
+
+  it.each(["", "<t3-memory>Search project notes before diagnosing the build.</t3-memory>"])(
+    "adds recalled memory to the outgoing turn without changing the user message: %s",
+    async (memoryContext) => {
+      const harness = await createHarness({ memoryContext });
+      const sent = await Effect.runPromise(Deferred.make<void>());
+      harness.sendTurn.mockImplementation(() =>
+        Deferred.succeed(sent, undefined).pipe(
+          Effect.as({
+            threadId: ThreadId.make("thread-1"),
+            turnId: asTurnId("turn-1"),
+          }),
+        ),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-memory-turn"),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId("memory-user-message"),
+            role: "user",
+            text: "Diagnose the build",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+      await Effect.runPromise(Deferred.await(sent));
+      await harness.drain();
+      expect(harness.contextForThread).toHaveBeenCalledWith(
+        ThreadId.make("thread-1"),
+        "Diagnose the build",
+      );
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: "Diagnose the build" });
+      if (memoryContext) {
+        expect(harness.sendTurn.mock.calls[0]?.[0]).toHaveProperty("memoryContext", memoryContext);
+      } else {
+        expect(harness.sendTurn.mock.calls[0]?.[0]).not.toHaveProperty("memoryContext");
+      }
+      const snapshot = await harness.readModel();
+      expect(
+        snapshot.threads[0]?.messages.find((message) => message.id === "memory-user-message")?.text,
+      ).toBe("Diagnose the build");
+    },
+  );
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();

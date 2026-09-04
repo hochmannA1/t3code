@@ -11,15 +11,15 @@ const options = [
     label: "t3code",
   },
   {
-    ref: scopeProjectRef(EnvironmentId.make("local"), ProjectId.make("kara-code")),
-    value: "local:kara-code",
-    label: "kara-code",
+    ref: scopeProjectRef(EnvironmentId.make("local"), ProjectId.make("example-code")),
+    value: "local:example-code",
+    label: "example-code",
   },
 ];
 
 describe("filterProjectPickerOptions", () => {
   it("matches project names without case sensitivity", () => {
-    expect(filterProjectPickerOptions(options, "KARA")).toEqual([options[1]]);
+    expect(filterProjectPickerOptions(options, "EXAMPLE")).toEqual([options[1]]);
   });
 
   it("returns all projects for an empty search", () => {

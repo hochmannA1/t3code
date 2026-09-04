@@ -38,6 +38,7 @@ import * as SchemaIssue from "effect/SchemaIssue";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { withProviderMemoryContext } from "../../memory/providerMemoryContext.ts";
 import * as ServerConfig from "../../config.ts";
 import {
   increment,
@@ -250,7 +251,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
    */
   const agentMcpCapabilities = serverSettings.getSettings.pipe(
     Effect.map((settings) => {
-      const capabilities = new Set<McpInvocationContext.McpCapability>(["threads"]);
+      const capabilities = new Set<McpInvocationContext.McpCapability>(["threads", "memory"]);
       if (settings.enableAgentBrowserAccess) capabilities.add("preview");
       if (settings.enableAgentAutomationAccess) capabilities.add("automations");
       return capabilities;
@@ -802,7 +803,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // rather than issuing a new one: sessions that go a long time between
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
-      const turn = yield* routed.adapter.sendTurn(input);
+      const turn = yield* routed.adapter.sendTurn(withProviderMemoryContext(input));
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,

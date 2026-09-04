@@ -101,6 +101,13 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - Bring `secrets` and `settings.json` only if the flow under test needs them.
 - Copy in, never symlink. Data flows one way: into your sandbox, never back out.
 
+## Fork database migrations
+
+- Keep upstream migration filenames, IDs, names, and the `effect_sql_migrations` history unchanged when integrating upstream work.
+- Name every fork-only migration `Fork_NNN_Description.ts` and register it in `forkMigrationEntries` in `apps/server/src/persistence/Migrations.ts`. Fork IDs start at 1 and are tracked independently in `effect_sql_fork_migrations`; never put a fork migration in the upstream ledger or reserve a high upstream ID.
+- Prefix matching tests with `Fork_NNN_` too. A filename prefix alone does not prevent database history collisions.
+- Never renumber or rewrite an applied migration to fix a collision. Add a tested compatibility bridge that recognizes the original ID and name, preserves installed data, and transfers only the known fork history. Verify fresh installs, installed fork history, and later upstream IDs with disposable databases.
+
 ## Verifying
 
 - Smallest proof that the change works. `vp test run <files>` for the tests you touched, targeted lint and typecheck for the scope you changed.

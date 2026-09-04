@@ -114,6 +114,9 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as AutomationService from "./automation/AutomationService.ts";
+import * as MemoryService from "./memory/MemoryService.ts";
+import * as MemoryStore from "./memory/MemoryStore.ts";
+import * as MemorySourceReader from "./memory/MemorySourceReader.ts";
 import * as AutomationStore from "./automation/AutomationStore.ts";
 import * as AutomationMirror from "./automation/AutomationMirror.ts";
 import { automationInternalRouteLayer } from "./automation/http.ts";
@@ -291,6 +294,26 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+const MemoryLayerLive = MemoryService.layer.pipe(
+  Layer.provideMerge(MemoryStore.layer),
+  Layer.provideMerge(MemorySourceReader.layer),
+  Layer.provide(TextGeneration.layer),
+);
+
+const MemoryWorkerLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const memory = yield* MemoryService.MemoryService;
+    yield* forkParked(
+      memory.tick().pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Memory maintenance is pending", { message: error.message }),
+        ),
+        Effect.repeat(Schedule.spaced("1 minute")),
+      ),
+    );
+  }),
+);
+
 const AutomationStoreLayerLive = AutomationStore.layer;
 
 const AutomationLayerLive = AutomationService.layer.pipe(Layer.provide(AutomationStoreLayerLive));
@@ -450,7 +473,7 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
-const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
+const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(Layer.provideMerge(MemoryLayerLive)).pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),
@@ -729,9 +752,10 @@ export const makeServerLayer = Layer.unwrap(
       }),
     );
 
-    const runtimeDependenciesWithAutomationLive = AutomationRuntimeLive.pipe(
-      Layer.provideMerge(RuntimeDependenciesLive),
-    );
+    const runtimeDependenciesWithAutomationLive = Layer.mergeAll(
+      AutomationRuntimeLive,
+      MemoryWorkerLive,
+    ).pipe(Layer.provideMerge(RuntimeDependenciesLive));
     const runtimeServicesLive = ServerRuntimeStartup.layerWithOptions({
       activate: Deferred.succeed(activation, undefined).pipe(Effect.asVoid),
       abort: (error) => Deferred.die(activation, error).pipe(Effect.asVoid),

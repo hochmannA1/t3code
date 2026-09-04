@@ -485,3 +485,27 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
+
+describe("Memory settings", () => {
+  it("loads existing installations with memory and dreaming enabled and a dedicated model", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.memory).toMatchObject({
+      enabled: true,
+      useMemories: true,
+      generateMemories: true,
+      dreaming: true,
+      modelSelection: { instanceId: "codex", model: "gpt-5.6-luna" },
+    });
+    expect(decodeServerSettings(encodeServerSettings(settings)).memory).toEqual(settings.memory);
+  });
+
+  it.each([
+    { maxContextTokens: 0 },
+    { maxContextTokens: 8193 },
+    { maxSourcesPerPass: 21 },
+    { idleMinutes: 0 },
+    { modelSelection: null },
+  ])("rejects unbounded or missing memory processing configuration: %j", (memory) => {
+    expect(() => decodeServerSettingsPatch({ memory })).toThrow();
+  });
+});

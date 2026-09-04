@@ -5,11 +5,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "../NodeSqliteClient.ts";
-import Migration0044 from "./044_Automations.ts";
+import Migration0044 from "./Fork_001_Automations.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
-layer("045_RepairRenumberedProjectionThreadColumns", (it) => {
+layer("Fork_002_RepairRenumberedProjectionThreadColumns", (it) => {
   it.effect("repairs projection columns skipped by the former migration 42", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -21,7 +21,7 @@ layer("045_RepairRenumberedProjectionThreadColumns", (it) => {
         VALUES (42, 'Automations')
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 45 });
+      yield* runMigrations({ toForkMigrationInclusive: 2 });
 
       const columns = yield* sql<{ readonly name: string }>`
         PRAGMA table_info(projection_threads)

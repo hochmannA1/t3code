@@ -896,7 +896,7 @@ function AutomationDetail(props: {
                       {run.trigger === "manual"
                         ? "Run now"
                         : run.trigger === "remote"
-                          ? "Kara wake-up"
+                          ? "Remote wake-up"
                           : "Scheduled"}
                     </span>
                   </div>

@@ -53,6 +53,10 @@ function makeFakeCodexBinary(
       [
         "#!/bin/sh",
         'original_args="$*"',
+        'if [ "$1" = "mcp" ]; then',
+        `  printf '%s\\n' '[{"name":"external_server","transport":{"type":"stdio"}}]'`,
+        "  exit 0",
+        "fi",
         'output_path=""',
         'seen_image="0"',
         'seen_service_tier=""',
@@ -90,6 +94,11 @@ function makeFakeCodexBinary(
         "  shift",
         "done",
         'stdin_content="$(cat)"',
+        'case "$stdin_content" in *"bounded memory maintenance job"*)',
+        `  expected='mcp_servers={"external_server"={enabled=false,command="t3code-memory-disabled"}}'`,
+        '  case "$original_args" in *"$expected"*) ;; *) exit 10 ;; esac',
+        '  case "$original_args" in *"read-only"*"memories.generate_memories=false"*) ;; *) exit 11 ;; esac',
+        "esac",
         ...(input.requireArg !== undefined
           ? [
               `case " $original_args " in *" ${input.requireArg} "*) ;; *)`,
@@ -205,6 +214,37 @@ function withFakeCodexEnv<A, E, R>(
 }
 
 it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
+  it.effect("dreams in an isolated read-only process with configured MCP servers disabled", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          entries: [
+            {
+              title: "Decision",
+              text: "Use receipts.",
+              keywords: ["receipts"],
+              scope: "project",
+              sourceIds: ["source-1"],
+            },
+          ],
+        }),
+        requireArg: "features.shell_tool=false",
+        stdinMustContain: "deeper weekly review",
+        launchArgs: '--config model_provider="azure"',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateMemory({
+            cwd: "/does-not-exist-memory-test",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+            mode: "dream",
+            sources: [{ id: "source-1", text: "Use receipts." }],
+          });
+          expect(generated.entries[0]?.sourceIds).toEqual(["source-1"]);
+        }),
+    ),
+  );
+
   it.effect("generates and sanitizes commit messages without branch by default", () =>
     withFakeCodexEnv(
       {

@@ -5,11 +5,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "../NodeSqliteClient.ts";
-import Migration0044 from "./044_Automations.ts";
+import Migration0044 from "./Fork_001_Automations.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
-layer("044_Automations", (it) => {
+layer("Fork_001_Automations", (it) => {
   it.effect("accepts the automation schema created by the former migration 42", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -44,17 +44,17 @@ layer("044_Automations", (it) => {
         )
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 44 });
+      yield* runMigrations({ toForkMigrationInclusive: 1 });
 
       const automations = yield* sql<{ readonly automation_id: string }>`
         SELECT automation_id FROM automations
       `;
       const migrations = yield* sql<{ readonly migration_id: number }>`
-        SELECT migration_id FROM effect_sql_migrations WHERE migration_id = 44
+        SELECT migration_id FROM effect_sql_fork_migrations WHERE migration_id = 1
       `;
 
       assert.deepEqual([...automations], [{ automation_id: "legacy-automation" }]);
-      assert.deepEqual([...migrations], [{ migration_id: 44 }]);
+      assert.deepEqual([...migrations], [{ migration_id: 1 }]);
     }),
   );
 });

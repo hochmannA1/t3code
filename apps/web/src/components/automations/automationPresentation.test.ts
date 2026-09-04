@@ -74,7 +74,7 @@ describe("automation list presentation", () => {
   } as unknown as Automation;
 
   it("filters by status and searches project names", () => {
-    const projectNames = new Map([["project-1", "Kara Agent Hub"]]);
+    const projectNames = new Map([["project-1", "Remote Agent Hub"]]);
     expect(filterAutomations([automation], "active", "agent hub", projectNames)).toEqual([
       automation,
     ]);

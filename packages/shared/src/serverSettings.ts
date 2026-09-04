@@ -172,6 +172,9 @@ export function applyServerSettingsPatch(
   const next = deepMerge(current, patchForMerge);
   const nextWithReplacementsBase = {
     ...next,
+    ...(patch.memory?.modelSelection !== undefined
+      ? { memory: { ...next.memory, modelSelection: patch.memory.modelSelection } }
+      : {}),
     ...(backgroundActivity !== undefined
       ? {
           backgroundActivity: {

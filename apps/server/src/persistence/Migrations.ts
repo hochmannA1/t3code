@@ -10,6 +10,7 @@
 
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -55,8 +56,9 @@ import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
 import Migration0041 from "./Migrations/041_AuthSessionClientConnection.ts";
 import Migration0042 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
-import Migration0044 from "./Migrations/044_Automations.ts";
-import Migration0045 from "./Migrations/045_RepairRenumberedProjectionThreadColumns.ts";
+import ForkMigration0001 from "./Migrations/Fork_001_Automations.ts";
+import ForkMigration0002 from "./Migrations/Fork_002_RepairRenumberedProjectionThreadColumns.ts";
+import ForkMigration0003 from "./Migrations/Fork_003_Memory.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -112,9 +114,25 @@ export const migrationEntries = [
   [41, "AuthSessionClientConnection", Migration0041],
   [42, "ProjectionThreadLinkedPullRequest", Migration0042],
   [43, "ProjectionThreadsUnsettledAt", Migration0043],
-  [44, "Automations", Migration0044],
-  [45, "RepairRenumberedProjectionThreadColumns", Migration0045],
 ] as const;
+
+// Fork IDs have their own ledger and never advance the upstream migration watermark.
+export const forkMigrationEntries = [
+  [1, "Automations", ForkMigration0001],
+  [2, "RepairRenumberedProjectionThreadColumns", ForkMigration0002],
+  [3, "Memory", ForkMigration0003],
+] as const;
+
+export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);
+
+export const makeForkMigrationLoader = (throughId?: number) =>
+  Migrator.fromRecord(
+    Object.fromEntries(
+      forkMigrationEntries
+        .filter(([id]) => throughId === undefined || id <= throughId)
+        .map(([id, name, migration]) => [`${id}_${name}`, migration]),
+    ),
+  );
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
@@ -134,26 +152,100 @@ export const makeMigrationLoader = (throughId?: number) =>
 const run = Migrator.make({});
 
 export interface RunMigrationsOptions {
+  /** An explicit upstream fixture boundary omits fork migrations unless requested separately. */
   readonly toMigrationInclusive?: number | undefined;
+  readonly toForkMigrationInclusive?: number | undefined;
 }
 
-/**
- * Run all pending migrations.
- *
- * Creates the migrations tracking table (effect_sql_migrations) if it doesn't exist,
- * then runs any migrations with ID greater than the latest recorded migration.
- *
- * Returns array of [id, name] tuples for migrations that were run.
- *
- * @returns Effect containing array of executed migrations
- */
+const adoptLegacyForkMigrations = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const legacyRows = yield* sql<{
+    readonly migration_id: number;
+    readonly name: string;
+    readonly created_at: string;
+  }>`
+    SELECT migration_id, name, created_at FROM effect_sql_migrations
+    WHERE (migration_id IN (42, 44) AND name = 'Automations')
+       OR (migration_id = 45 AND name = 'RepairRenumberedProjectionThreadColumns')
+    ORDER BY migration_id
+  `;
+
+  for (const row of legacyRows) {
+    const forkId = row.name === "Automations" ? 1 : 2;
+    yield* sql`
+      INSERT INTO effect_sql_fork_migrations (migration_id, name, created_at)
+      VALUES (${forkId}, ${row.name}, ${row.created_at})
+      ON CONFLICT (migration_id) DO NOTHING
+    `;
+    yield* sql`
+      DELETE FROM effect_sql_migrations
+      WHERE migration_id = ${row.migration_id} AND name = ${row.name}
+    `;
+  }
+
+  // Old fork migration 42 could hide upstream 42 below a later applied upstream ID.
+  // The upstream migrator only runs IDs above its watermark, so repair that hole explicitly.
+  if (legacyRows.some((row) => row.migration_id === 42)) {
+    const later = yield* sql`
+      SELECT 1 FROM effect_sql_migrations WHERE migration_id > 42 LIMIT 1
+    `;
+    if (later.length > 0) {
+      yield* Migration0042;
+      yield* sql`
+        INSERT INTO effect_sql_migrations (migration_id, name)
+        VALUES (42, 'ProjectionThreadLinkedPullRequest')
+      `;
+    }
+  }
+});
+
+/** Runs upstream and fork histories atomically, adopting only recognized legacy fork IDs. */
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
+  toForkMigrationInclusive,
 }: RunMigrationsOptions = {}) {
-  const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
-  const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
-  yield* migrations.length === 0
-    ? Effect.logDebug("Database schema is current")
-    : Effect.log("Migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
-  return executedMigrations;
+  const sql = yield* SqlClient.SqlClient;
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      // Create both ledgers before moving installed fork history into its namespace.
+      yield* run({ loader: Migrator.fromRecord({}) });
+      yield* run({ loader: Migrator.fromRecord({}), table: "effect_sql_fork_migrations" });
+      yield* adoptLegacyForkMigrations;
+
+      for (const [table, manifest] of [
+        ["effect_sql_migrations", migrationManifest],
+        ["effect_sql_fork_migrations", forkMigrationManifest],
+      ] as const) {
+        const applied = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+        SELECT migration_id, name FROM ${sql(table)}
+      `;
+        for (const row of applied) {
+          const expected = manifest.find(([id]) => id === row.migration_id);
+          if (expected && expected[1] !== row.name) {
+            return yield* new Migrator.MigrationError({
+              kind: "BadState",
+              message: `Migration ${table}:${row.migration_id} is ${row.name}, expected ${expected[1]}`,
+            });
+          }
+        }
+      }
+
+      const upstream = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+      const fork =
+        toMigrationInclusive !== undefined && toForkMigrationInclusive === undefined
+          ? []
+          : yield* run({
+              loader: makeForkMigrationLoader(toForkMigrationInclusive),
+              table: "effect_sql_fork_migrations",
+            });
+      const migrations = [
+        ...upstream.map(([id, name]) => `${id}_${name}`),
+        ...fork.map(([id, name]) => `Fork_${id}_${name}`),
+      ];
+      yield* migrations.length === 0
+        ? Effect.logDebug("Database schema is current")
+        : Effect.log("Migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
+      return [...upstream, ...fork];
+    }),
+  );
 });

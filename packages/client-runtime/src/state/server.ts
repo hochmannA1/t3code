@@ -840,6 +840,27 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
     }),
+    memoryGetState: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:memory:state",
+      tag: WS_METHODS.memoryGetState,
+      staleTimeMs: 0,
+    }),
+    memoryUpsert: createEnvironmentRpcCommand(runtime, {
+      label: "memory:upsert",
+      tag: WS_METHODS.memoryUpsert,
+    }),
+    memoryForget: createEnvironmentRpcCommand(runtime, {
+      label: "memory:forget",
+      tag: WS_METHODS.memoryForget,
+    }),
+    memorySetThreadPolicy: createEnvironmentRpcCommand(runtime, {
+      label: "memory:thread-policy",
+      tag: WS_METHODS.memorySetThreadPolicy,
+    }),
+    memoryRunNow: createEnvironmentRpcCommand(runtime, {
+      label: "memory:run-now",
+      tag: WS_METHODS.memoryRunNow,
+    }),
     automationsList: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:automations:list",
       tag: WS_METHODS.automationsList,

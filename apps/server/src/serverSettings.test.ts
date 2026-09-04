@@ -25,6 +25,7 @@ import * as ServerSettingsModule from "./serverSettings.ts";
 
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
+const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 
 const makeServerSettingsLayer = () =>
   ServerSettingsModule.layer.pipe(
@@ -298,6 +299,30 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         assert.isFalse(persisted.sidebarAutoSettleOnMerge);
       }),
     ).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect(
+    "persists the dedicated memory model and never replaces it when its provider is disabled",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const modelSelection = {
+          instanceId: ProviderInstanceId.make("memory-only"),
+          model: "custom-model",
+        };
+        yield* serverSettings.updateSettings({
+          memory: { modelSelection, generateMemories: false },
+        });
+        const next = yield* serverSettings.updateSettings({ memory: { dreaming: false } });
+        const persisted = yield* fileSystem.readFileString(serverConfig.settingsPath);
+        const decoded = yield* decodeServerSettingsJson(persisted);
+        assert.deepEqual(next.memory.modelSelection, modelSelection);
+        assert.deepEqual(decoded.memory.modelSelection, modelSelection);
+        assert.isFalse(decoded.memory.generateMemories);
+        assert.isFalse(decoded.memory.dreaming);
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
