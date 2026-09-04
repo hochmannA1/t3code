@@ -962,6 +962,65 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect(
+    "adds historical memory once at the adapter boundary without changing the user input",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const session = yield* provider.startSession(asThreadId("memory-routing"), {
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: codexInstanceId,
+          threadId: asThreadId("memory-routing"),
+          cwd: "/tmp/project",
+          runtimeMode: "full-access",
+        });
+        routing.codex.sendTurn.mockClear();
+        const input = {
+          threadId: session.threadId,
+          input: "Inspect this project",
+          memoryContext: "Remembered preference: use receipts.",
+        };
+        yield* provider.sendTurn(input);
+        const sent = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+        assert.equal(input.input, "Inspect this project");
+        assert.equal(sent.memoryContext, undefined);
+        assert.ok(sent.input?.startsWith("Inspect this project"));
+        assert.equal(sent.input?.split(input.memoryContext).length, 2);
+        routing.codex.sendTurn.mockClear();
+        yield* provider.sendTurn({ threadId: session.threadId, input: "No recalled memory" });
+        const plain = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+        assert.equal(plain.input, "No recalled memory");
+        yield* provider.stopSession({ threadId: session.threadId });
+        routing.codex.startSession.mockClear();
+        routing.codex.sendTurn.mockClear();
+      }),
+  );
+
+  it.effect("skips memory when the complete block would exceed the turn limit", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const session = yield* provider.startSession(asThreadId("memory-limit"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("memory-limit"),
+        cwd: "/tmp/project",
+        runtimeMode: "full-access",
+      });
+      routing.codex.sendTurn.mockClear();
+      const input = "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS - 1);
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input,
+        memoryContext: "complete memory",
+      });
+      const sent = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.equal(sent.input, input);
+      assert.equal(sent.memoryContext, undefined);
+      yield* provider.stopSession({ threadId: session.threadId });
+      routing.codex.sendTurn.mockClear();
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
@@ -2523,7 +2582,7 @@ describe("agent MCP access", () => {
       return issued;
     });
 
-  it.effect("issues read-only thread access when optional agent toolkits are off", () =>
+  it.effect("issues thread and memory access when optional agent toolkits are off", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-tools-off");
       const issued = yield* startSessionWith(
@@ -2537,7 +2596,7 @@ describe("agent MCP access", () => {
       assert.deepEqual(issued, [
         {
           threadId,
-          capabilities: new Set<McpInvocationContext.McpCapability>(["threads"]),
+          capabilities: new Set<McpInvocationContext.McpCapability>(["threads", "memory"]),
         },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -2566,7 +2625,7 @@ describe("agent MCP access", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("adds enabled optional capabilities to read-only thread access", () =>
+  it.effect("adds enabled optional capabilities to thread and memory access", () =>
     Effect.gen(function* () {
       const browserThreadId = asThreadId("thread-browser-on");
       const automationsThreadId = asThreadId("thread-automations-on");
@@ -2589,13 +2648,21 @@ describe("agent MCP access", () => {
       assert.deepEqual(browserIssued, [
         {
           threadId: browserThreadId,
-          capabilities: new Set<McpInvocationContext.McpCapability>(["threads", "preview"]),
+          capabilities: new Set<McpInvocationContext.McpCapability>([
+            "threads",
+            "memory",
+            "preview",
+          ]),
         },
       ]);
       assert.deepEqual(automationsIssued, [
         {
           threadId: automationsThreadId,
-          capabilities: new Set<McpInvocationContext.McpCapability>(["threads", "automations"]),
+          capabilities: new Set<McpInvocationContext.McpCapability>([
+            "threads",
+            "memory",
+            "automations",
+          ]),
         },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),

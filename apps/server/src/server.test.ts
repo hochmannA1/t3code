@@ -1,3 +1,5 @@
+import { MemoryService } from "./memory/MemoryService.ts";
+import { MemorySourceReader } from "./memory/MemorySourceReader.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -670,7 +672,11 @@ const buildAppUnderTest = (options?: {
         disableLogger: true,
         routerConfig: HTTP_ROUTER_CONFIG,
       },
-    ).pipe(Layer.provide(automationLayer));
+    ).pipe(
+      Layer.provide(automationLayer),
+      Layer.provide(Layer.mock(MemoryService)({ contextForThread: () => Effect.succeed("") })),
+      Layer.provide(Layer.mock(MemorySourceReader)({})),
+    );
     const servedRoutesLayer = servedRoutesWithAutomationLayer.pipe(
       Layer.provide(
         Layer.mergeAll(

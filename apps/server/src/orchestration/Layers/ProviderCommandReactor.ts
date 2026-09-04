@@ -36,6 +36,7 @@ import { increment, orchestrationEventsProcessedTotal } from "../../observabilit
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
+import { MemoryService } from "../../memory/MemoryService.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -317,6 +318,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
+  const memory = yield* MemoryService;
   const serverSettingsService = yield* ServerSettingsService;
   const serverConfig = yield* ServerConfig;
   const serverCommandId = (tag: string) =>
@@ -840,8 +842,18 @@ const make = Effect.gen(function* () {
           : requestedModelSelection
         : input.modelSelection;
 
+    const memoryContext = yield* memory
+      .contextForThread(input.threadId, input.messageText)
+      .pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Memory recall unavailable", { message: error.message }).pipe(
+            Effect.as(""),
+          ),
+        ),
+      );
     return {
       threadId: input.threadId,
+      ...(memoryContext ? { memoryContext } : {}),
       ...(normalizedInput ? { input: normalizedInput } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),

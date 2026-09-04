@@ -1,3 +1,13 @@
+import {
+  MemoryStateInput,
+  MemoryState,
+  MemoryEntry,
+  MemoryUpsertInput,
+  MemoryForgetInput,
+  MemorySetThreadPolicyInput,
+  MemoryThreadPolicy,
+  MemoryError,
+} from "./memory.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -224,6 +234,11 @@ import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
   // Scheduled prompt automations
+  memoryGetState: "memory.getState",
+  memoryUpsert: "memory.upsert",
+  memoryForget: "memory.forget",
+  memorySetThreadPolicy: "memory.setThreadPolicy",
+  memoryRunNow: "memory.runNow",
   automationsList: "automations.list",
   automationsGet: "automations.get",
   automationsCreate: "automations.create",
@@ -379,6 +394,33 @@ export const WsServerProbeRpc = Rpc.make(WS_METHODS.serverProbe, {
   payload: Schema.Struct({}),
   success: Schema.Struct({}),
   error: EnvironmentAuthorizationError,
+});
+
+const MemoryRpcError = Schema.Union([MemoryError, EnvironmentAuthorizationError]);
+export const WsMemoryGetStateRpc = Rpc.make(WS_METHODS.memoryGetState, {
+  payload: MemoryStateInput,
+  success: MemoryState,
+  error: MemoryRpcError,
+});
+export const WsMemoryUpsertRpc = Rpc.make(WS_METHODS.memoryUpsert, {
+  payload: MemoryUpsertInput,
+  success: MemoryEntry,
+  error: MemoryRpcError,
+});
+export const WsMemoryForgetRpc = Rpc.make(WS_METHODS.memoryForget, {
+  payload: MemoryForgetInput,
+  success: Schema.Struct({}),
+  error: MemoryRpcError,
+});
+export const WsMemorySetThreadPolicyRpc = Rpc.make(WS_METHODS.memorySetThreadPolicy, {
+  payload: MemorySetThreadPolicyInput,
+  success: MemoryThreadPolicy,
+  error: MemoryRpcError,
+});
+export const WsMemoryRunNowRpc = Rpc.make(WS_METHODS.memoryRunNow, {
+  payload: Schema.Struct({}),
+  success: Schema.Struct({}),
+  error: MemoryRpcError,
 });
 
 const AutomationRpcError = Schema.Union([AutomationError, EnvironmentAuthorizationError]);
@@ -1144,6 +1186,11 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
 });
 
 export const WsRpcGroup = RpcGroup.make(
+  WsMemoryGetStateRpc,
+  WsMemoryUpsertRpc,
+  WsMemoryForgetRpc,
+  WsMemorySetThreadPolicyRpc,
+  WsMemoryRunNowRpc,
   WsAutomationsListRpc,
   WsAutomationsGetRpc,
   WsAutomationsCreateRpc,

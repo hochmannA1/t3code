@@ -1,4 +1,7 @@
+import { buildMemoryPrompt, validateMemorySources } from "./MemoryGeneration.ts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 
 import {
@@ -34,6 +37,7 @@ const OpenCodeTextGenerationOperation = Schema.Literals([
   "generatePrContent",
   "generateBranchName",
   "generateThreadTitle",
+  "generateMemory",
 ]);
 
 type OpenCodeTextGenerationOperation = typeof OpenCodeTextGenerationOperation.Type;
@@ -174,6 +178,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
   openCodeSettings: OpenCodeSettings,
 ) {
   const serverConfig = yield* ServerConfig.ServerConfig;
+  const fileSystem = yield* FileSystem.FileSystem;
   const openCodeRuntime = yield* OpenCodeRuntime.OpenCodeRuntime;
   const serverOwner = yield* OpenCodeServerOwner.OpenCodeServerOwner;
 
@@ -229,6 +234,15 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             operation: input.operation,
             cwd: input.cwd,
           });
+        }
+        if (input.operation === "generateMemory") {
+          const sessionId = session.data.id;
+          yield* Effect.addFinalizer(() =>
+            Effect.tryPromise({
+              try: () => client.session.delete({ sessionID: sessionId }),
+              catch: () => undefined,
+            }).pipe(Effect.ignore),
+          );
         }
         const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
         const selectedVariant = getModelSelectionStringOptionValue(input.modelSelection, "variant");
@@ -332,6 +346,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             .pipe(Effect.flatMap(runAgainstServer), Effect.scoped)
         : serverOwner.withServer(runAgainstServer);
     const rawOutput = yield* serverOutput.pipe(
+      Effect.scoped,
       Effect.catchTags({
         OpenCodeRuntimeError: (cause) =>
           Effect.fail(
@@ -358,6 +373,46 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       }),
     );
   });
+
+  const generateMemory: TextGeneration.TextGeneration["Service"]["generateMemory"] = Effect.fn(
+    "OpenCodeTextGeneration.generateMemory",
+  )(function* (input) {
+    const { prompt, outputSchema, sourceIds } = buildMemoryPrompt(input);
+    const cwd = yield* fileSystem
+      .makeTempDirectoryScoped({ prefix: "t3code-memory-opencode-" })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generateMemory",
+              detail: "Failed to create isolated memory working directory.",
+              cause,
+            }),
+        ),
+      );
+    const generated = yield* runOpenCodeJson({
+      operation: "generateMemory",
+      cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      modelSelection: input.modelSelection,
+    }).pipe(
+      Effect.timeoutOption(180_000),
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            Effect.fail(
+              new TextGenerationError({
+                operation: "generateMemory",
+                detail: "OpenCode memory generation timed out.",
+              }),
+            ),
+          onSome: Effect.succeed,
+        }),
+      ),
+    );
+    return yield* validateMemorySources(generated, sourceIds);
+  }, Effect.scoped);
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("OpenCodeTextGeneration.generateCommitMessage")(function* (input) {
@@ -452,6 +507,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     });
 
   return {
+    generateMemory,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

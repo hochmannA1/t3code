@@ -126,6 +126,7 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as AutomationService from "./automation/AutomationService.ts";
+import * as MemoryService from "./memory/MemoryService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -602,6 +603,7 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const automations = yield* AutomationService.AutomationService;
+      const memory = yield* MemoryService.MemoryService;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1272,6 +1274,26 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.memoryGetState]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryGetState, memory.getState(input), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memoryUpsert]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryUpsert, memory.upsert(input), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memoryForget]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryForget, memory.forget(input).pipe(Effect.as({})), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memorySetThreadPolicy]: (input) =>
+          observeRpcEffect(WS_METHODS.memorySetThreadPolicy, memory.setThreadPolicy(input), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memoryRunNow]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryRunNow, memory.runNow(input).pipe(Effect.as({})), {
+            "rpc.aggregate": "memory",
+          }),
         [WS_METHODS.automationsList]: (input) =>
           observeRpcEffect(
             WS_METHODS.automationsList,

@@ -12,6 +12,16 @@ const laptopId = EnvironmentId.make("env-laptop");
 const boxId = EnvironmentId.make("env-box");
 
 describe("splitSharedServerPatch", () => {
+  it("keeps memory learning and model settings on the selected environment", () => {
+    const patch = {
+      memory: {
+        generateMemories: false,
+        modelSelection: DEFAULT_SERVER_SETTINGS.memory.modelSelection,
+      },
+    };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: {}, localPatch: patch });
+  });
+
   it("routes preference keys to the shared patch and machine keys to the local patch", () => {
     const { sharedPatch, localPatch } = splitSharedServerPatch({
       sidebarAutoSettleAfterDays: 7,

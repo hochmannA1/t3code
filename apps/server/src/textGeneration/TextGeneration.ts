@@ -8,6 +8,8 @@ import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstance
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
+import type { MemoryGenerationInput, MemoryGenerationResult } from "./MemoryGeneration.ts";
+
 export type TextGenerationProvider = "codex" | "claudeAgent" | "cursor" | "grok" | "opencode";
 
 export interface CommitMessageGenerationInput {
@@ -79,6 +81,10 @@ export interface ThreadTitleGenerationResult {
 export class TextGeneration extends Context.Service<
   TextGeneration,
   {
+    readonly generateMemory: (
+      input: MemoryGenerationInput,
+    ) => Effect.Effect<MemoryGenerationResult, TextGenerationError>;
+
     /**
      * Generate a commit message from staged change context.
      */
@@ -108,6 +114,7 @@ export class TextGeneration extends Context.Service<
 >()("t3/textGeneration/TextGeneration") {}
 
 type TextGenerationOp =
+  | "generateMemory"
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
@@ -135,6 +142,10 @@ export const makeTextGenerationFromRegistry = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
 ): TextGeneration["Service"] =>
   TextGeneration.of({
+    generateMemory: (input) =>
+      resolveInstance(registry, "generateMemory", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateMemory(input)),
+      ),
     generateCommitMessage: (input) =>
       resolveInstance(registry, "generateCommitMessage", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateCommitMessage(input)),

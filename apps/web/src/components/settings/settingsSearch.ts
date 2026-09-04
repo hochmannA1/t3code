@@ -244,6 +244,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "memory",
+    title: "Memory",
+    to: "/settings/general",
+    targetId: "memory",
+    searchTerms: ["dream dreaming memories learn forget personal project conversation model"],
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",

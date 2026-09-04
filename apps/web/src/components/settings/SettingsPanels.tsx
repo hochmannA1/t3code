@@ -1,3 +1,4 @@
+import { MemorySettingsSection } from "./MemorySettings";
 import { ArchiveIcon, ArchiveX, ChevronRightIcon, LoaderIcon, SettingsIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
@@ -2555,6 +2556,8 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+
+      <MemorySettingsSection />
 
       <SettingsSection title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

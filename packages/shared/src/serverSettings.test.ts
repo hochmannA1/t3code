@@ -18,6 +18,27 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  it("preserves memory controls while replacing model-specific options", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      memory: {
+        ...DEFAULT_SERVER_SETTINGS.memory,
+        dreaming: false,
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "old-model", [
+          {
+            id: "reasoningEffort",
+            value: "high",
+          },
+        ]),
+      },
+    };
+    const selection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "new-model");
+    const next = applyServerSettingsPatch(current, { memory: { modelSelection: selection } });
+    expect(next.memory.dreaming).toBe(false);
+    expect(next.memory.modelSelection).toEqual(selection);
+    expect(next.textGenerationModelSelection).toEqual(current.textGenerationModelSelection);
+  });
+
   it("normalizes optional persisted strings", () => {
     expect(normalizePersistedServerSettingString(undefined)).toBeUndefined();
     expect(normalizePersistedServerSettingString("   ")).toBeUndefined();

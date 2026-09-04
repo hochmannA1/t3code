@@ -35,3 +35,5 @@ export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";
 export * from "./threadTools.ts";
+
+export * from "./memory.ts";

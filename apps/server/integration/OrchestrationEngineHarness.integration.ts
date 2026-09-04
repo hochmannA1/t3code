@@ -1,3 +1,4 @@
+import { MemoryService } from "../src/memory/MemoryService.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 
@@ -333,10 +334,13 @@ export const makeOrchestrationIntegrationHarness = (
       }) => Effect.succeed({ branch: input.newBranch }),
     });
     const textGenerationLayer = Layer.succeed(TextGeneration, {
+      generateMemory: () =>
+        Effect.die("Memory generation is not used by this orchestration fixture"),
       generateBranchName: () => Effect.succeed({ branch: "update" }),
       generateThreadTitle: () => Effect.succeed({ title: "New thread" }),
     } as unknown as TextGeneration["Service"]);
     const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
+      Layer.provide(Layer.mock(MemoryService)({ contextForThread: () => Effect.succeed("") })),
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(gitWorkflowLayer),
       Layer.provideMerge(textGenerationLayer),

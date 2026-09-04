@@ -23,6 +23,8 @@ const runtimeMock = {
     authHeaders: [] as Array<string | null>,
     closeCalls: [] as string[],
     sessionCreateCalls: 0,
+    sessionPermissions: [] as unknown[],
+    deletedSessions: [] as string[],
     connectionError: undefined as Error | undefined,
     sessionCreateError: undefined as unknown,
     sessionResult: undefined as { data?: { id: string } } | undefined,
@@ -38,6 +40,8 @@ const runtimeMock = {
     this.state.authHeaders.length = 0;
     this.state.closeCalls.length = 0;
     this.state.sessionCreateCalls = 0;
+    this.state.sessionPermissions.length = 0;
+    this.state.deletedSessions.length = 0;
     this.state.connectionError = undefined;
     this.state.sessionCreateError = undefined;
     this.state.sessionResult = undefined;
@@ -94,7 +98,12 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntimeShape = {
   createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
     ({
       session: {
-        create: async () => {
+        delete: async ({ sessionID }: { sessionID: string }) => {
+          runtimeMock.state.deletedSessions.push(sessionID);
+          return {};
+        },
+        create: async (input: { permission: unknown }) => {
+          runtimeMock.state.sessionPermissions.push(input.permission);
           runtimeMock.state.sessionCreateCalls += 1;
           if (runtimeMock.state.sessionCreateError !== undefined) {
             throw runtimeMock.state.sessionCreateError;
@@ -233,6 +242,27 @@ const advanceIdleClock = Effect.gen(function* () {
 });
 
 it.layer(OpenCodeTextGenerationTestLayer)("OpenCodeTextGeneration", (it) => {
+  it.effect("uses deny-all permissions and deletes the memory session after generation", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
+      Effect.gen(function* () {
+        runtimeMock.state.promptResult = {
+          data: { parts: [{ type: "text", text: '{"entries":[]}' }] },
+        };
+        const generated = yield* textGeneration.generateMemory({
+          cwd: process.cwd(),
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          mode: "extract",
+          sources: [{ id: "source-1", text: "Nothing useful." }],
+        });
+        expect(generated.entries).toEqual([]);
+        expect(runtimeMock.state.sessionPermissions).toEqual([
+          [{ permission: "*", pattern: "*", action: "deny" }],
+        ]);
+        expect(runtimeMock.state.deletedSessions).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect("excludes generic files from thread title generation", () =>
     withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
       Effect.gen(function* () {

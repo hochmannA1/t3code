@@ -1,3 +1,8 @@
+import {
+  buildMemoryPrompt,
+  validateMemorySources,
+  memoryCliFailureDetail,
+} from "./MemoryGeneration.ts";
 /**
  * ClaudeTextGeneration – Text generation layer using the Claude CLI.
  *
@@ -8,6 +13,7 @@
  * @module ClaudeTextGeneration
  */
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -68,6 +74,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
   modelCatalog: Effect.Effect<ClaudeModelCatalog> = Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG),
 ) {
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const fileSystem = yield* FileSystem.FileSystem;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
   const scopedModelCatalog = modelCatalog.pipe(
     Effect.map((catalog) => scopeClaudeModelCatalog(catalog, claudeSettings.customModels)),
@@ -93,6 +100,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
+      | "generateMemory"
       | "generateThreadTitle",
     value: unknown,
     detail: string,
@@ -123,6 +131,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
+      | "generateMemory"
       | "generateThreadTitle";
     cwd: string;
     prompt: string;
@@ -167,6 +176,9 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
       ...(fastMode ? { fastMode: true } : {}),
       ...(ultracode ? { ultracode: true } : {}),
+      ...(operation === "generateMemory"
+        ? { autoMemoryEnabled: false, disableAllHooks: true }
+        : {}),
     };
     const settingsJson =
       Object.keys(settings).length > 0
@@ -190,7 +202,19 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(settingsJson ? ["--settings", settingsJson] : []),
-          "--dangerously-skip-permissions",
+          ...(operation === "generateMemory"
+            ? [
+                "--tools",
+                "",
+                "--strict-mcp-config",
+                "--mcp-config",
+                '{"mcpServers":{}}',
+                "--disable-slash-commands",
+                "--no-session-persistence",
+                "--permission-mode",
+                "dontAsk",
+              ]
+            : ["--dangerously-skip-permissions"]),
         ],
         { env: claudeEnvironment },
       );
@@ -231,9 +255,11 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         return yield* new TextGenerationError({
           operation,
           detail:
-            detail.length > 0
-              ? `Claude CLI command failed: ${detail}`
-              : `Claude CLI command failed with code ${exitCode}.`,
+            operation === "generateMemory"
+              ? memoryCliFailureDetail("Claude", stderr, Number(exitCode))
+              : detail.length > 0
+                ? `Claude CLI command failed: ${detail}`
+                : `Claude CLI command failed with code ${exitCode}.`,
         });
       }
 
@@ -285,6 +311,30 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
   // ---------------------------------------------------------------------------
   // TextGeneration service methods
   // ---------------------------------------------------------------------------
+
+  const generateMemory: TextGeneration.TextGeneration["Service"]["generateMemory"] = Effect.fn(
+    "ClaudeTextGeneration.generateMemory",
+  )(function* (input) {
+    const { prompt, outputSchema, sourceIds } = buildMemoryPrompt(input);
+    const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-memory-claude-" }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new TextGenerationError({
+            operation: "generateMemory",
+            detail: "Failed to create isolated memory working directory.",
+            cause,
+          }),
+      ),
+    );
+    const generated = yield* runClaudeJson({
+      operation: "generateMemory",
+      cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      modelSelection: input.modelSelection,
+    });
+    return yield* validateMemorySources(generated, sourceIds);
+  }, Effect.scoped);
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("ClaudeTextGeneration.generateCommitMessage")(function* (input) {
@@ -381,6 +431,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     });
 
   return {
+    generateMemory,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

@@ -1,3 +1,8 @@
+import {
+  buildMemoryPrompt,
+  validateMemorySources,
+  memoryCliFailureDetail,
+} from "./MemoryGeneration.ts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -38,6 +43,44 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 
 const CODEX_TIMEOUT_MS = 180_000;
+const decodeMcpServerNames = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        transport: Schema.Struct({ type: Schema.Literals(["stdio", "streamable_http"]) }),
+      }),
+    ),
+  ),
+);
+const MEMORY_CODEX_CONFIG = [
+  'approval_policy="never"',
+  'web_search="disabled"',
+  "notify=[]",
+  "memories.generate_memories=false",
+  "memories.use_memories=false",
+  "project_doc_max_bytes=0",
+  "agents.enabled=false",
+  ...[
+    "shell_tool",
+    "unified_exec",
+    "js_repl",
+    "apps",
+    "plugins",
+    "hooks",
+    "codex_hooks",
+    "plugin_hooks",
+    "multi_agent",
+    "multi_agent_v2",
+    "memory_tool",
+    "external_agent_memory_import",
+    "view_image",
+    "image_generation",
+    "imagegenext",
+    "browser_use_external",
+    "in_app_browser",
+  ].map((feature) => `features.${feature}=false`),
+];
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 /**
  * Build a Codex text-generation closure bound to a specific `CodexSettings`
@@ -101,6 +144,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
+      | "generateMemory"
       | "generateThreadTitle",
     value: unknown,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -120,6 +164,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
+      | "generateMemory"
       | "generateThreadTitle",
     attachments: TextGeneration.BranchNameGenerationInput["attachments"],
   ): Effect.fn.Return<MaterializedImageAttachments, TextGenerationError> {
@@ -162,6 +207,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
+      | "generateMemory"
       | "generateThreadTitle";
     cwd: string;
     prompt: string;
@@ -179,6 +225,96 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
 
     const runCodexCommand = Effect.fn("runCodexJson.runCodexCommand")(function* () {
       const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
+      const memoryJob = operation === "generateMemory";
+      const commandCwd = memoryJob
+        ? yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-memory-codex-" }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new TextGenerationError({
+                  operation,
+                  detail: "Failed to create isolated memory working directory.",
+                  cause,
+                }),
+            ),
+          )
+        : cwd;
+      const commandEnv = {
+        ...resolvedEnvironment,
+        ...(codexConfig.homePath ? { CODEX_HOME: expandHomePath(codexConfig.homePath) } : {}),
+      };
+      // Empty config tables merge with inherited tables. Enumerate names so each configured
+      // MCP server is explicitly disabled while retaining provider and Azure auth settings.
+      // Injected servers need a valid transport during bootstrap even when disabled;
+      // an inert placeholder keeps this independent of their credentials and commands.
+      let memoryMcpConfig: string[] = [];
+      if (memoryJob) {
+        const listSpawn = yield* resolveSpawnCommand(
+          codexConfig.binaryPath || "codex",
+          [
+            "mcp",
+            "list",
+            "--json",
+            ...codexExecLaunchArgs(launchArgs).filter((arg) => arg !== "--strict-config"),
+          ],
+          { env: commandEnv },
+        );
+        const listProcess = yield* commandSpawner
+          .spawn(
+            ChildProcess.make(listSpawn.command, listSpawn.args, {
+              env: commandEnv,
+              cwd: commandCwd,
+              shell: listSpawn.shell,
+            }),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new TextGenerationError({
+                  operation,
+                  detail: "Failed to inspect Codex MCP configuration for memory isolation.",
+                  cause,
+                }),
+            ),
+          );
+        const [listing, , exitCode] = yield* Effect.all(
+          [
+            readStreamAsString(operation, listProcess.stdout),
+            readStreamAsString(operation, listProcess.stderr),
+            listProcess.exitCode,
+          ],
+          { concurrency: "unbounded" },
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new TextGenerationError({
+                operation,
+                detail: "Failed to inspect Codex MCP configuration for memory isolation.",
+                cause,
+              }),
+          ),
+        );
+        if (exitCode !== 0)
+          return yield* new TextGenerationError({
+            operation,
+            detail:
+              "Codex MCP configuration could not be inspected; memory generation was not started.",
+          });
+        const servers = yield* decodeMcpServerNames(listing).pipe(
+          Effect.mapError(
+            (cause) =>
+              new TextGenerationError({
+                operation,
+                detail:
+                  "Codex returned invalid MCP configuration; memory generation was not started.",
+                cause,
+              }),
+          ),
+        );
+        memoryMcpConfig = [
+          "--config",
+          `mcp_servers={${servers.map((server) => `${JSON.stringify(server.name)}={enabled=false,${server.transport.type === "stdio" ? 'command="t3code-memory-disabled"' : 'url="http://127.0.0.1:9"'}}`).join(",")}}`,
+        ];
+      }
       const reasoningEffort =
         getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
         DEFAULT_TEXT_GENERATION_REASONING_EFFORT;
@@ -192,6 +328,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           "--skip-git-repo-check",
           "-s",
           "read-only",
+          ...(memoryJob
+            ? [...MEMORY_CODEX_CONFIG.flatMap((value) => ["--config", value]), ...memoryMcpConfig]
+            : []),
           "--model",
           modelSelection.model,
           "--config",
@@ -207,11 +346,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         { env: resolvedEnvironment },
       );
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: {
-          ...resolvedEnvironment,
-          ...(codexConfig.homePath ? { CODEX_HOME: expandHomePath(codexConfig.homePath) } : {}),
-        },
-        cwd,
+        env: commandEnv,
+        cwd: commandCwd,
         shell: spawnCommand.shell,
         stdin: {
           stream: Stream.encodeText(Stream.make(prompt)),
@@ -245,8 +381,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
         return yield* new TextGenerationError({
           operation,
-          detail:
-            detail.length > 0
+          detail: memoryJob
+            ? memoryCliFailureDetail("Codex", stderr, Number(exitCode))
+            : detail.length > 0
               ? `Codex CLI command failed: ${detail}`
               : `Codex CLI command failed with code ${exitCode}.`,
         });
@@ -299,6 +436,20 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         }),
       );
     }).pipe(Effect.ensuring(cleanup));
+  });
+
+  const generateMemory: TextGeneration.TextGeneration["Service"]["generateMemory"] = Effect.fn(
+    "CodexTextGeneration.generateMemory",
+  )(function* (input) {
+    const { prompt, outputSchema, sourceIds } = buildMemoryPrompt(input);
+    const generated = yield* runCodexJson({
+      operation: "generateMemory",
+      cwd: input.cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      modelSelection: input.modelSelection,
+    });
+    return yield* validateMemorySources(generated, sourceIds);
   });
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
@@ -406,6 +557,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     });
 
   return {
+    generateMemory,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

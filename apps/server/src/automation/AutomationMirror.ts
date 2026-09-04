@@ -15,7 +15,7 @@ const MAX_RETRY_DELAY_MS = 5 * 60_000;
 
 const CoordinatorConfig = Config.all({
   baseUrl: Config.string("T3_AUTOMATIONS_COORDINATOR_URL").pipe(Config.option),
-  token: Config.string("KARA_TOOLS_TOKEN").pipe(Config.option),
+  token: Config.string("T3_AUTOMATIONS_COORDINATOR_TOKEN").pipe(Config.option),
 });
 
 export function automationMirrorUrl(baseUrl: string, automationId: string): string {

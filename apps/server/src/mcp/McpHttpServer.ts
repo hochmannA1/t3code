@@ -21,6 +21,8 @@ import { AutomationToolkitHandlersLive } from "./toolkits/automations/handlers.t
 import { AutomationToolkit } from "./toolkits/automations/tools.ts";
 import { ThreadToolkitHandlersLive } from "./toolkits/threads/handlers.ts";
 import { ThreadToolkit } from "./toolkits/threads/tools.ts";
+import { MemoryToolkitHandlersLive } from "./toolkits/memory/handlers.ts";
+import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 import {
   PreviewSnapshotTool,
   PreviewSnapshotToolkit,
@@ -228,6 +230,10 @@ export const ThreadToolkitRegistrationLive = McpServer.toolkit(ThreadToolkit).pi
   Layer.provide(ThreadToolkitHandlersLive),
 );
 
+export const MemoryToolkitRegistrationLive = McpServer.toolkit(MemoryToolkit).pipe(
+  Layer.provide(MemoryToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -239,4 +245,5 @@ export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   AutomationToolkitRegistrationLive,
   ThreadToolkitRegistrationLive,
+  MemoryToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

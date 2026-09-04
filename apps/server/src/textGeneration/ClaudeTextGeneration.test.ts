@@ -236,6 +236,28 @@ function withFakeClaudeEnv<A, E, R>(
 }
 
 it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
+  it.effect("extracts memory with all tools disabled and no permission bypass", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { entries: [] } }),
+        argsMustContain:
+          '--tools  --strict-mcp-config --mcp-config {"mcpServers":{}} --disable-slash-commands --no-session-persistence --permission-mode dontAsk',
+        argsMustNotContain: "--dangerously-skip-permissions",
+        stdinMustContain: "Extract only durable",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateMemory({
+            cwd: "/does-not-exist-memory-test",
+            modelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), "sonnet"),
+            mode: "extract",
+            sources: [{ id: "source-1", text: "No useful information." }],
+          });
+          expect(generated.entries).toEqual([]);
+        }),
+    ),
+  );
+
   it.effect("forwards Claude thinking settings without passing unsupported effort", () =>
     withFakeClaudeEnv(
       {
