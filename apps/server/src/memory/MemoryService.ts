@@ -2,7 +2,10 @@ import * as NodeCrypto from "node:crypto";
 import {
   MemoryError,
   MemoryEntry,
+  ModelSelection,
   type MemoryForgetInput,
+  type MemoryGetRecommendationsInput,
+  type MemoryGetRecommendationsResult,
   type MemorySetThreadPolicyInput,
   type MemoryState,
   type MemoryStateInput,
@@ -13,16 +16,24 @@ import {
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ServerConfig } from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
+import { MEMORY_RECOMMENDATION_GENERATION_VERSION } from "../textGeneration/MemoryRecommendationGeneration.ts";
 import { buildMemoryContext } from "./MemoryContext.ts";
 import { redactMemoryText } from "./redactMemoryText.ts";
 import { MemorySourceReader, sourceId, sourceRevision, sourceText } from "./MemorySourceReader.ts";
-import { MemoryStore, fingerprint, type MemoryManifest, type MemorySource } from "./MemoryStore.ts";
+import {
+  MemoryStore,
+  fingerprint,
+  recommendationMemoryDigest,
+  type MemoryManifest,
+  type MemorySource,
+} from "./MemoryStore.ts";
 
 const DEFAULT_THREAD_POLICY = { useMemories: true, generateMemories: true };
 const MAX_AUTOMATIC_ENTRIES_PER_SCOPE = 512;
@@ -31,8 +42,11 @@ const MAX_MAINTENANCE_ENTRIES = 24;
 const MAX_SOURCE_ATTEMPTS = 5;
 const DAILY_CONSOLIDATION_MS = 24 * 60 * 60_000;
 const WEEKLY_DREAM_MS = 7 * DAILY_CONSOLIDATION_MS;
+export const MEMORY_RECOMMENDATION_WARM_PROJECT_LIMIT = 6;
+export const MEMORY_RECOMMENDATION_WARM_CONCURRENCY = 2;
 const iso = (time: number) => DateTime.formatIso(DateTime.makeUnsafe(time));
 const encodeEntry = Schema.encodeSync(Schema.fromJsonString(MemoryEntry));
+const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 const scopeKey = (projectId: ProjectId | null) => projectId ?? "__personal__";
 const digestEntries = (entries: ReadonlyArray<MemoryEntry>) =>
   fingerprint(
@@ -61,13 +75,17 @@ export const make = Effect.gen(function* () {
   const generation = yield* TextGeneration;
   const config = yield* ServerConfig;
   const now = Clock.currentTimeMillis.pipe(Effect.map(iso));
+  const recommendationFlights = new Map<
+    string,
+    Deferred.Deferred<MemoryGetRecommendationsResult>
+  >();
 
   const policy = (manifest: MemoryManifest, threadId?: string) =>
     (threadId ? manifest.threadPolicies[threadId] : undefined) ?? DEFAULT_THREAD_POLICY;
 
   const scopedEntries = Effect.fn("MemoryService.scopedEntries")(function* (
     manifest: MemoryManifest,
-    projectId?: ProjectId,
+    projectId?: ProjectId | null,
   ) {
     const candidates = manifest.entries.filter(
       (entry) =>
@@ -85,6 +103,113 @@ export const make = Effect.gen(function* () {
           : [];
       }),
     );
+  });
+
+  const getRecommendations = Effect.fn("MemoryService.getRecommendations")(
+    function* (input: MemoryGetRecommendationsInput) {
+      const fallback = {
+        recommendations: [],
+        retryable: false,
+      } satisfies MemoryGetRecommendationsResult;
+      const retryableFailure = {
+        recommendations: [],
+        retryable: true,
+      } satisfies MemoryGetRecommendationsResult;
+      const preferences = yield* settings.getSettings;
+      if (!preferences.memory.enabled || !preferences.memory.useMemories) return fallback;
+      const project = input.projectId
+        ? yield* reader.projectForRecommendation(input.projectId)
+        : null;
+      if (input.projectId !== null && project === undefined) return fallback;
+
+      const manifest = yield* store.read();
+      const metadata = manifest.entries.filter(
+        (entry) => entry.projectId === null || entry.projectId === input.projectId,
+      );
+      if (metadata.length === 0) return fallback;
+      const memoryDigest = recommendationMemoryDigest(manifest.entries, input.projectId);
+      const projectIdentity = project
+        ? fingerprint(`${project.projectId}\0${project.title}\0${project.workspaceRoot}`)
+        : "__personal__";
+      const freshnessKey = fingerprint(
+        [
+          MEMORY_RECOMMENDATION_GENERATION_VERSION,
+          memoryDigest,
+          projectIdentity,
+          encodeModelSelection(preferences.textGenerationModelSelection),
+        ].join("\0"),
+      );
+      const cached = manifest.recommendationCache[freshnessKey];
+      if (cached?.projectId === input.projectId) return cached.result;
+
+      const deferred = yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          const existing = recommendationFlights.get(freshnessKey);
+          if (existing) return existing;
+          const created = Deferred.makeUnsafe<MemoryGetRecommendationsResult>();
+          recommendationFlights.set(freshnessKey, created);
+          yield* Effect.gen(function* () {
+            const memories = yield* scopedEntries(manifest, input.projectId);
+            if (memories.length === 0) return fallback;
+            const result = yield* generation
+              .generateMemoryRecommendations({
+                cwd: config.stateDir,
+                modelSelection: preferences.textGenerationModelSelection,
+                project: project ? { title: project.title } : null,
+                memories,
+              })
+              .pipe(Effect.timeout("90 seconds"));
+            if (!result.retryable) {
+              yield* store
+                .cacheRecommendations(freshnessKey, input.projectId, memoryDigest, result)
+                .pipe(
+                  Effect.catch(() =>
+                    Effect.logWarning("Memory recommendations could not be cached"),
+                  ),
+                );
+            }
+            return result;
+          }).pipe(
+            Effect.catch(() =>
+              Effect.logWarning("Memory recommendations could not be generated").pipe(
+                Effect.as(retryableFailure),
+              ),
+            ),
+            Effect.onExit((exit) =>
+              Effect.sync(() => recommendationFlights.delete(freshnessKey)).pipe(
+                Effect.andThen(Deferred.done(created, exit)),
+              ),
+            ),
+            Effect.forkDetach,
+          );
+          return created;
+        }),
+      );
+      return yield* Deferred.await(deferred);
+    },
+    Effect.orElseSucceed(() => ({ recommendations: [], retryable: true })),
+  );
+
+  const warmRecommendations = Effect.fn("MemoryService.warmRecommendations")(function* () {
+    yield* Effect.gen(function* () {
+      const preferences = yield* settings.getSettings;
+      if (!preferences.memory.enabled || !preferences.memory.useMemories) return;
+      const manifest = yield* store.read();
+      const projectIds = [
+        ...new Set(
+          manifest.entries.flatMap((entry) => (entry.projectId === null ? [] : [entry.projectId])),
+        ),
+      ];
+      const projects = yield* reader.projectsForRecommendations(
+        projectIds,
+        MEMORY_RECOMMENDATION_WARM_PROJECT_LIMIT,
+      );
+      yield* Effect.forEach(
+        [null, ...projects.map((project) => project.projectId)],
+        (projectId) => getRecommendations({ projectId }),
+        { concurrency: MEMORY_RECOMMENDATION_WARM_CONCURRENCY, discard: true },
+      );
+    }).pipe(Effect.catch(() => Effect.logWarning("Memory recommendations could not be warmed")));
   });
 
   const getState = Effect.fn("MemoryService.getState")(function* (
@@ -811,7 +936,18 @@ export const make = Effect.gen(function* () {
     Effect.mapError((error) => new MemoryError({ message: messageFrom(error) })),
   );
 
-  return { getState, upsert, forget, setThreadPolicy, contextForThread, forAgent, runNow, tick };
+  return {
+    getState,
+    getRecommendations,
+    warmRecommendations,
+    upsert,
+    forget,
+    setThreadPolicy,
+    contextForThread,
+    forAgent,
+    runNow,
+    tick,
+  };
 });
 
 export class MemoryService extends Context.Service<MemoryService, Effect.Success<typeof make>>()(

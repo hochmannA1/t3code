@@ -25,6 +25,11 @@ const ConversationRow = Schema.Struct({
   userText: Schema.String,
   assistantText: Schema.String,
 });
+const RecommendationProjectRow = Schema.Struct({
+  projectId: ProjectId,
+  title: Schema.String,
+  workspaceRoot: Schema.String,
+});
 const encodeConversationEvidence = Schema.encodeSync(
   Schema.fromJsonString(
     Schema.Array(
@@ -174,6 +179,39 @@ export const make = Effect.gen(function* () {
     return rows[0].projectId;
   });
 
+  const projectForRecommendation = Effect.fn("MemorySourceReader.projectForRecommendation")(
+    function* (projectId: ProjectId) {
+      const rows = yield* sql`
+        SELECT project_id AS "projectId", title, workspace_root AS "workspaceRoot"
+        FROM projection_projects
+        WHERE project_id = ${projectId} AND deleted_at IS NULL
+        LIMIT 1
+      `.pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(RecommendationProjectRow))),
+        Effect.mapError(failed),
+      );
+      return rows[0];
+    },
+  );
+
+  const projectsForRecommendations = Effect.fn("MemorySourceReader.projectsForRecommendations")(
+    function* (projectIds: ReadonlyArray<ProjectId>, limit: number) {
+      if (projectIds.length === 0) return [];
+      return yield* sql`
+        SELECT p.project_id AS "projectId", p.title, p.workspace_root AS "workspaceRoot"
+        FROM projection_projects p
+        LEFT JOIN projection_threads t ON t.project_id = p.project_id AND t.deleted_at IS NULL
+        WHERE ${sql.in("p.project_id", projectIds)} AND p.deleted_at IS NULL
+        GROUP BY p.project_id, p.title, p.workspace_root, p.updated_at
+        ORDER BY MAX(p.updated_at, COALESCE(MAX(t.updated_at), p.updated_at)) DESC, p.project_id
+        LIMIT ${limit}
+      `.pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(RecommendationProjectRow))),
+        Effect.mapError(failed),
+      );
+    },
+  );
+
   const hasActiveTurns = Effect.fn("MemorySourceReader.hasActiveTurns")(function* (since?: string) {
     const rows = yield* sql<{ active: number }>`SELECT EXISTS(
       SELECT 1 FROM projection_turns t JOIN projection_threads th ON th.thread_id = t.thread_id
@@ -205,6 +243,8 @@ export const make = Effect.gen(function* () {
     read,
     readConversation,
     projectForThread,
+    projectForRecommendation,
+    projectsForRecommendations,
     hasActiveTurns,
     validSourceIds,
   };

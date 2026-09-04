@@ -10,7 +10,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
-import { make, type MemorySource } from "./MemoryStore.ts";
+import { make, recommendationMemoryDigest, type MemorySource } from "./MemoryStore.ts";
 
 const remembered: MemoryEntry = {
   id: "memory-one",
@@ -56,6 +56,56 @@ function openStore<A, E>(
 }
 
 describe("MemoryStore persistence", () => {
+  it.effect("decodes manifests written before recommendation caching existed", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-legacy-cache-" });
+      yield* openStore(baseDir, (store) =>
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const legacy =
+            '{"version":1,"revision":0,"cursor":{"at":"","rowId":0},"entries":[],"pending":[],"sources":{},"suppressedSources":[],"threadPolicies":{},"dreamedScopes":{},"lastDreamedAt":null,"lastError":null,"runRequested":false,"recommendationCache":{"old-key":{"recommendations":[]}}}';
+          yield* sql`UPDATE t3_memory_state SET manifest_json = ${legacy} WHERE id = 1`;
+          assert.deepEqual((yield* store.read()).recommendationCache, {});
+        }),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("persists derived recommendations without changing the memory revision", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-cache-revision-" });
+      yield* openStore(baseDir, (store) =>
+        Effect.gen(function* () {
+          const before = yield* store.read();
+          const result = {
+            recommendations: [
+              {
+                id: "memory-cache-test",
+                type: "task" as const,
+                label: "Review storage",
+                prompt: "Review the current storage setup.",
+              },
+            ],
+          };
+          yield* store.cacheRecommendations(
+            "freshness-key",
+            null,
+            recommendationMemoryDigest([], null),
+            { ...result, retryable: false },
+          );
+          const after = yield* store.read();
+          assert.equal(after.revision, before.revision);
+          assert.deepEqual(after.recommendationCache["freshness-key"], {
+            projectId: null,
+            result: { ...result, retryable: false },
+          });
+        }),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("reopens committed memory and pending work after an interrupted processing lease", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

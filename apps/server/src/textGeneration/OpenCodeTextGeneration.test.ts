@@ -242,6 +242,34 @@ const advanceIdleClock = Effect.gen(function* () {
 });
 
 it.layer(OpenCodeTextGenerationTestLayer)("OpenCodeTextGeneration", (it) => {
+  it.effect("uses deny-all permissions and deletes the recommendation session", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
+      Effect.gen(function* () {
+        runtimeMock.state.promptResult = {
+          data: {
+            parts: [
+              {
+                type: "text",
+                text: '{"recommendations":[{"type":"task","label":"Review storage","prompt":"Review storage."}]}',
+              },
+            ],
+          },
+        };
+        const generated = yield* textGeneration.generateMemoryRecommendations({
+          cwd: process.cwd(),
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          project: null,
+          memories: [],
+        });
+        expect(generated.recommendations[0]?.type).toBe("task");
+        expect(runtimeMock.state.sessionPermissions).toEqual([
+          [{ permission: "*", pattern: "*", action: "deny" }],
+        ]);
+        expect(runtimeMock.state.deletedSessions).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect("uses deny-all permissions and deletes the memory session after generation", () =>
     withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
       Effect.gen(function* () {

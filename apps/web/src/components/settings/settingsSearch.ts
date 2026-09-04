@@ -254,7 +254,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",
-    searchTerms: ["generated thread titles source control content default provider"],
+    searchTerms: [
+      "generated thread titles new task recommendations suggestions source control content default provider",
+    ],
   },
   {
     id: "diagnostics",

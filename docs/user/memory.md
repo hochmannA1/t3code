@@ -10,6 +10,14 @@ The default memory model is **Codex · gpt-5.6-luna**. The memory model picker c
 
 Codex, Claude, and OpenCode support background memory generation. Cursor and Grok conversations can contribute to and use memory, but their models cannot currently perform background memory generation. Select a supported provider for the memory model. If that provider or model is unavailable, T3 shows an error and retains pending work. It does not silently choose another provider or model.
 
+## Suggestions for a new task
+
+In Work, an empty new-task composer can show up to two suggestions based on memory. A project task uses personal memory and memory for that project. A projectless task uses personal memory only.
+
+Suggestions can start a task, propose an automation, or ask the agent to create a page. The icon beside each suggestion identifies its type. Selecting one copies its starting message into the composer so you can review or edit it. Nothing runs, creates an automation, or publishes a page until you send the message and complete any confirmation the agent requests.
+
+T3 generates these suggestions with the **Text generation model** in General settings. Its default is **Codex · gpt-5.6-luna**. This is separate from the memory model used for extraction, consolidation, and dreaming. Codex, Claude, and OpenCode can generate recommendations; selecting Cursor or Grok offers a retry instead. T3 stores generated suggestions locally so they are ready after a restart, and prepares suggestions for personal memory and recently active projects in the background. It generates a new set when the relevant memory, project, model, or suggestion format changes. T3 can also return no suggestions when the available memory does not support a useful next action.
+
 ## Reading and learning
 
 **Use memories** controls whether T3 supplies remembered context and memory tools to agents. **Learn from conversations** controls automatic extraction. Each conversation also has separate use and learning controls in the Memory settings section.

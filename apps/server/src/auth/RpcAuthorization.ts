@@ -22,6 +22,7 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  */
 export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.memoryGetState]: AuthOrchestrationReadScope,
+  [WS_METHODS.memoryGetRecommendations]: AuthOrchestrationReadScope,
   [WS_METHODS.memoryUpsert]: AuthOrchestrationOperateScope,
   [WS_METHODS.memoryForget]: AuthOrchestrationOperateScope,
   [WS_METHODS.memorySetThreadPolicy]: AuthOrchestrationOperateScope,

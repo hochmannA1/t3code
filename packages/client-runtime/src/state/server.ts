@@ -845,6 +845,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.memoryGetState,
       staleTimeMs: 0,
     }),
+    memoryGetRecommendations: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:memory:recommendations",
+      tag: WS_METHODS.memoryGetRecommendations,
+      staleTimeMs: 5 * 60_000,
+    }),
     memoryUpsert: createEnvironmentRpcCommand(runtime, {
       label: "memory:upsert",
       tag: WS_METHODS.memoryUpsert,

@@ -3,6 +3,10 @@ import {
   validateMemorySources,
   memoryCliFailureDetail,
 } from "./MemoryGeneration.ts";
+import {
+  buildMemoryRecommendationPrompt,
+  validateMemoryRecommendations,
+} from "./MemoryRecommendationGeneration.ts";
 /**
  * ClaudeTextGeneration – Text generation layer using the Claude CLI.
  *
@@ -101,6 +105,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generatePrContent"
       | "generateBranchName"
       | "generateMemory"
+      | "generateMemoryRecommendations"
       | "generateThreadTitle",
     value: unknown,
     detail: string,
@@ -132,6 +137,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generatePrContent"
       | "generateBranchName"
       | "generateMemory"
+      | "generateMemoryRecommendations"
       | "generateThreadTitle";
     cwd: string;
     prompt: string;
@@ -172,13 +178,13 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       thinkingDescriptor?.type === "boolean" ? thinkingDescriptor.currentValue : undefined;
     const fastMode =
       fastModeDescriptor?.type === "boolean" ? fastModeDescriptor.currentValue : undefined;
+    const isolatedJob =
+      operation === "generateMemory" || operation === "generateMemoryRecommendations";
     const settings = {
       ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
       ...(fastMode ? { fastMode: true } : {}),
       ...(ultracode ? { ultracode: true } : {}),
-      ...(operation === "generateMemory"
-        ? { autoMemoryEnabled: false, disableAllHooks: true }
-        : {}),
+      ...(isolatedJob ? { autoMemoryEnabled: false, disableAllHooks: true } : {}),
     };
     const settingsJson =
       Object.keys(settings).length > 0
@@ -202,7 +208,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(settingsJson ? ["--settings", settingsJson] : []),
-          ...(operation === "generateMemory"
+          ...(isolatedJob
             ? [
                 "--tools",
                 "",
@@ -254,12 +260,11 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
         return yield* new TextGenerationError({
           operation,
-          detail:
-            operation === "generateMemory"
-              ? memoryCliFailureDetail("Claude", stderr, Number(exitCode))
-              : detail.length > 0
-                ? `Claude CLI command failed: ${detail}`
-                : `Claude CLI command failed with code ${exitCode}.`,
+          detail: isolatedJob
+            ? memoryCliFailureDetail("Claude", stderr, Number(exitCode))
+            : detail.length > 0
+              ? `Claude CLI command failed: ${detail}`
+              : `Claude CLI command failed with code ${exitCode}.`,
         });
       }
 
@@ -335,6 +340,31 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     });
     return yield* validateMemorySources(generated, sourceIds);
   }, Effect.scoped);
+
+  const generateMemoryRecommendations: TextGeneration.TextGeneration["Service"]["generateMemoryRecommendations"] =
+    Effect.fn("ClaudeTextGeneration.generateMemoryRecommendations")(function* (input) {
+      const { prompt, outputSchema } = buildMemoryRecommendationPrompt(input);
+      const cwd = yield* fileSystem
+        .makeTempDirectoryScoped({ prefix: "t3code-memory-recommendations-claude-" })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new TextGenerationError({
+                operation: "generateMemoryRecommendations",
+                detail: "Failed to create isolated recommendation working directory.",
+                cause,
+              }),
+          ),
+        );
+      const generated = yield* runClaudeJson({
+        operation: "generateMemoryRecommendations",
+        cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return yield* validateMemoryRecommendations(generated);
+    }, Effect.scoped);
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("ClaudeTextGeneration.generateCommitMessage")(function* (input) {
@@ -432,6 +462,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
   return {
     generateMemory,
+    generateMemoryRecommendations,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

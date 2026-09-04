@@ -1278,6 +1278,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.memoryGetState, memory.getState(input), {
             "rpc.aggregate": "memory",
           }),
+        [WS_METHODS.memoryGetRecommendations]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryGetRecommendations, memory.getRecommendations(input), {
+            "rpc.aggregate": "memory",
+          }),
         [WS_METHODS.memoryUpsert]: (input) =>
           observeRpcEffect(WS_METHODS.memoryUpsert, memory.upsert(input), {
             "rpc.aggregate": "memory",

@@ -3,6 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   DEFAULT_MEMORY_SETTINGS,
   ProjectId,
+  ProviderInstanceId,
   ThreadId,
   TextGenerationError,
 } from "@t3tools/contracts";
@@ -19,12 +20,14 @@ import { runMigrations } from "../persistence/Migrations.ts";
 import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
 import type { MemoryGenerationInput } from "../textGeneration/MemoryGeneration.ts";
+import type { MemoryRecommendationGenerationInput } from "../textGeneration/MemoryRecommendationGeneration.ts";
 import { make } from "./MemoryService.ts";
 import * as Store from "./MemoryStore.ts";
 import * as Sources from "./MemorySourceReader.ts";
 
 const threadId = ThreadId.make("memory-thread");
 const projectId = ProjectId.make("memory-project");
+const otherProjectId = ProjectId.make("other-memory-project");
 const sourceTime = "1970-01-01T00:00:00.000Z";
 
 const seed = Effect.gen(function* () {
@@ -32,6 +35,9 @@ const seed = Effect.gen(function* () {
   yield* sql`INSERT INTO projection_projects
     (project_id, title, workspace_root, scripts_json, created_at, updated_at)
     VALUES (${projectId}, 'Memory project', '/workspace', '[]', ${sourceTime}, ${sourceTime})`;
+  yield* sql`INSERT INTO projection_projects
+    (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+    VALUES (${otherProjectId}, 'Other project', '/other-workspace', '[]', ${sourceTime}, ${sourceTime})`;
   yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, created_at, updated_at)
     VALUES (${threadId}, ${projectId}, 'Memory thread', ${sourceTime}, ${sourceTime})`;
   yield* sql`INSERT INTO projection_thread_messages
@@ -107,16 +113,24 @@ const resultFor = (input: MemoryGenerationInput) => ({
   ],
 });
 
-const generationWith = (generateMemory: TextGeneration["Service"]["generateMemory"]) =>
+const generationWith = (
+  generateMemory: TextGeneration["Service"]["generateMemory"],
+  generateMemoryRecommendations: TextGeneration["Service"]["generateMemoryRecommendations"] = () =>
+    Effect.succeed({ recommendations: [], retryable: false }),
+) =>
   TextGeneration.of({
     generateMemory,
+    generateMemoryRecommendations,
     generateCommitMessage: () => Effect.die("Unexpected commit generation"),
     generatePrContent: () => Effect.die("Unexpected PR generation"),
     generateBranchName: () => Effect.die("Unexpected branch generation"),
     generateThreadTitle: () => Effect.die("Unexpected title generation"),
   });
 
-const setup = (generateMemory: TextGeneration["Service"]["generateMemory"]) =>
+const setup = (
+  generateMemory: TextGeneration["Service"]["generateMemory"],
+  generateMemoryRecommendations?: TextGeneration["Service"]["generateMemoryRecommendations"],
+) =>
   Effect.gen(function* () {
     yield* runMigrations();
     yield* seed;
@@ -125,19 +139,280 @@ const setup = (generateMemory: TextGeneration["Service"]["generateMemory"]) =>
     const service = yield* make.pipe(
       Effect.provideService(Store.MemoryStore, store),
       Effect.provideService(Sources.MemorySourceReader, reader),
-      Effect.provideService(TextGeneration, generationWith(generateMemory)),
+      Effect.provideService(
+        TextGeneration,
+        generationWith(generateMemory, generateMemoryRecommendations),
+      ),
     );
     return { service, store, reader };
   });
 
-const dependencies = () =>
+const dependencies = (settings: Parameters<typeof ServerSettings.layerTest>[0] = {}) =>
   Layer.mergeAll(
     NodeSqliteClient.layerMemory(),
     ServerConfig.layerTest(process.cwd(), { prefix: "t3-memory-service-" }),
-    ServerSettings.layerTest(),
+    ServerSettings.layerTest(settings),
   ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("memory lifecycle", () => {
+  it.effect("scopes and caches memory recommendations without failing the RPC", () =>
+    Effect.gen(function* () {
+      const inputs: MemoryRecommendationGenerationInput[] = [];
+      let generation = 0;
+      const { service } = yield* setup(
+        (input) => Effect.succeed(resultFor(input)),
+        (input) =>
+          Effect.sync(() => {
+            inputs.push(input);
+            generation += 1;
+            return {
+              recommendations: [
+                {
+                  id: `memory-test-${generation}`,
+                  type: "task" as const,
+                  label: "Review storage",
+                  prompt: "Review the current storage setup.",
+                },
+              ],
+              retryable: false,
+            };
+          }),
+      );
+      yield* service.upsert({
+        projectId: null,
+        title: "Personal preference",
+        text: "Prefer focused verification.",
+        pinned: true,
+      });
+      yield* service.upsert({
+        projectId,
+        title: "Project storage",
+        text: "This project uses persistent storage.",
+        pinned: true,
+      });
+      yield* service.upsert({
+        projectId: otherProjectId,
+        title: "Unrelated project",
+        text: "This belongs only to another project.",
+        pinned: true,
+      });
+
+      const first = yield* service.getRecommendations({ projectId: null });
+      const cached = yield* service.getRecommendations({ projectId: null });
+      yield* service.getRecommendations({ projectId });
+      const missing = yield* service.getRecommendations({
+        projectId: ProjectId.make("missing-project"),
+      });
+
+      assert.equal(first.recommendations[0]?.id, "memory-test-1");
+      assert.deepEqual(cached, first);
+      assert.deepEqual(
+        inputs.map((input) => input.memories.map((memory) => memory.title)),
+        [["Personal preference"], ["Personal preference", "Project storage"]],
+      );
+      assert.isNull(inputs[0]?.project);
+      assert.equal(inputs[1]?.project?.title, "Memory project");
+      assert.equal(inputs[0]?.modelSelection.instanceId, ProviderInstanceId.make("codex"));
+      assert.equal(inputs[0]?.modelSelection.model, "gpt-5.4");
+      assert.deepEqual(missing, { recommendations: [], retryable: false });
+    }).pipe(
+      Effect.provide(
+        dependencies({
+          textGenerationModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.4",
+          },
+          memory: {
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.6-luna",
+            },
+          },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("invalidates cached recommendations when memory changes", () =>
+    Effect.gen(function* () {
+      let generations = 0;
+      const { service } = yield* setup(
+        (input) => Effect.succeed(resultFor(input)),
+        () =>
+          Effect.sync(() => {
+            generations += 1;
+            return { recommendations: [], retryable: false };
+          }),
+      );
+      yield* service.upsert({
+        projectId: null,
+        title: "Initial preference",
+        text: "Prefer focused verification.",
+        pinned: true,
+      });
+
+      yield* service.getRecommendations({ projectId: null });
+      yield* service.getRecommendations({ projectId: null });
+      assert.equal(generations, 1);
+
+      yield* service.upsert({
+        projectId: null,
+        title: "New preference",
+        text: "Also verify the real user flow.",
+        pinned: true,
+      });
+      yield* service.getRecommendations({ projectId: null });
+      assert.equal(generations, 2);
+    }).pipe(Effect.provide(dependencies())),
+  );
+
+  it.effect("purges only recommendation scopes affected by update and forget", () =>
+    Effect.gen(function* () {
+      const { service, store } = yield* setup(
+        (input) => Effect.succeed(resultFor(input)),
+        (input) =>
+          Effect.succeed({
+            recommendations: [
+              {
+                id: `recommendation-${input.project?.title ?? "personal"}`,
+                type: "task" as const,
+                label: input.project?.title ?? "Personal",
+                prompt: "Start the relevant follow-up.",
+              },
+            ],
+            retryable: false,
+          }),
+      );
+      const personal = yield* service.upsert({
+        projectId: null,
+        title: "Personal preference",
+        text: "Keep changes focused.",
+        pinned: true,
+      });
+      const firstProject = yield* service.upsert({
+        projectId,
+        title: "First project",
+        text: "Review persistent storage.",
+        pinned: true,
+      });
+      yield* service.upsert({
+        projectId: otherProjectId,
+        title: "Other project",
+        text: "Review the other workspace.",
+        pinned: true,
+      });
+      yield* Effect.forEach(
+        [null, projectId, otherProjectId] as const,
+        (scope) => service.getRecommendations({ projectId: scope }),
+        { concurrency: 1, discard: true },
+      );
+
+      yield* service.upsert({
+        id: firstProject.id,
+        projectId,
+        title: "First project updated",
+        text: "Review persistent storage and backups.",
+        pinned: true,
+      });
+      assert.sameMembers(
+        Object.values((yield* store.read()).recommendationCache).map((entry) => entry.projectId),
+        [null, otherProjectId],
+      );
+
+      yield* service.getRecommendations({ projectId });
+      yield* service.forget({ id: firstProject.id });
+      assert.sameMembers(
+        Object.values((yield* store.read()).recommendationCache).map((entry) => entry.projectId),
+        [null, otherProjectId],
+      );
+
+      yield* service.forget({ id: personal.id });
+      assert.deepEqual((yield* store.read()).recommendationCache, {});
+    }).pipe(Effect.provide(dependencies())),
+  );
+
+  it.effect("does not join or persist a stale recommendation flight after memory changes", () =>
+    Effect.gen(function* () {
+      const firstStarted = yield* Deferred.make<void>();
+      const releaseFirst = yield* Deferred.make<void>();
+      let calls = 0;
+      const { service, store } = yield* setup(
+        (input) => Effect.succeed(resultFor(input)),
+        () =>
+          Effect.gen(function* () {
+            calls += 1;
+            const call = calls;
+            if (call === 1) {
+              yield* Deferred.succeed(firstStarted, undefined);
+              yield* Deferred.await(releaseFirst);
+            }
+            return {
+              recommendations: [
+                {
+                  id: `recommendation-${call}`,
+                  type: "task" as const,
+                  label: call === 1 ? "Stale action" : "Current action",
+                  prompt: "Start the relevant follow-up.",
+                },
+              ],
+              retryable: false,
+            };
+          }),
+      );
+      const memory = yield* service.upsert({
+        projectId,
+        title: "Project memory",
+        text: "Use the old approach.",
+        pinned: true,
+      });
+      const staleRequest = yield* service.getRecommendations({ projectId }).pipe(Effect.forkChild);
+      yield* Deferred.await(firstStarted);
+
+      yield* service.upsert({
+        id: memory.id,
+        projectId,
+        title: "Project memory",
+        text: "Use the current approach.",
+        pinned: true,
+      });
+      const current = yield* service.getRecommendations({ projectId });
+      assert.equal(current.recommendations[0]?.label, "Current action");
+      assert.equal(calls, 2);
+
+      yield* Deferred.succeed(releaseFirst, undefined);
+      assert.equal((yield* Fiber.join(staleRequest)).recommendations[0]?.label, "Stale action");
+      const cached = Object.values((yield* store.read()).recommendationCache);
+      assert.lengthOf(cached, 1);
+      assert.equal(cached[0]?.result.recommendations[0]?.label, "Current action");
+    }).pipe(Effect.provide(dependencies())),
+  );
+
+  it.effect("fails soft when recommendation generation fails", () =>
+    Effect.gen(function* () {
+      const { service, store } = yield* setup(
+        (input) => Effect.succeed(resultFor(input)),
+        () =>
+          Effect.fail(
+            new TextGenerationError({
+              operation: "generateMemoryRecommendations",
+              detail: "Unavailable",
+            }),
+          ),
+      );
+      yield* service.upsert({
+        projectId: null,
+        title: "Personal preference",
+        text: "Prefer focused verification.",
+        pinned: true,
+      });
+      assert.deepEqual(yield* service.getRecommendations({ projectId: null }), {
+        recommendations: [],
+        retryable: true,
+      });
+      assert.deepEqual((yield* store.read()).recommendationCache, {});
+    }).pipe(Effect.provide(dependencies())),
+  );
+
   it.effect("waits for the configured idle time before processing an older backlog", () =>
     Effect.gen(function* () {
       const inputs: MemoryGenerationInput[] = [];

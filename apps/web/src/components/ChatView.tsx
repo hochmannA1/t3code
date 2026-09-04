@@ -291,6 +291,11 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  DraftRecommendations,
+  recommendationProjectIdForDraft,
+  type DraftRecommendation,
+} from "./chat/DraftRecommendations";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -2893,6 +2898,25 @@ function ChatViewContent(props: ChatViewProps) {
     draftHeroDockRequested,
     backgroundSubmissionPending,
   });
+  const draftRecommendationProjectId = recommendationProjectIdForDraft(
+    isStandaloneDraft,
+    activeProject?.id,
+  );
+  const showDraftRecommendations =
+    routeKind === "draft" &&
+    appExperience === "work" &&
+    isDraftHeroState &&
+    !composerHasUnsentContent &&
+    draftRecommendationProjectId !== undefined &&
+    serverConfig?.environment.capabilities.memoryRecommendations === true;
+  const draftRecommendationsQuery = useEnvironmentQuery(
+    showDraftRecommendations && draftRecommendationProjectId !== undefined
+      ? serverEnvironment.memoryGetRecommendations({
+          environmentId,
+          input: { projectId: draftRecommendationProjectId },
+        })
+      : null,
+  );
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
@@ -3175,6 +3199,19 @@ function ChatViewContent(props: ChatViewProps) {
       focusComposer();
     });
   }, [focusComposer]);
+  const selectDraftRecommendation = useCallback(
+    (recommendation: DraftRecommendation) => {
+      promptRef.current = recommendation.prompt;
+      setComposerDraftPrompt(composerDraftTarget, recommendation.prompt);
+      composerRef.current?.resetCursorState({
+        cursor: recommendation.prompt.length,
+        prompt: recommendation.prompt,
+        detectTrigger: true,
+      });
+      scheduleComposerFocus();
+    },
+    [composerDraftTarget, composerRef, scheduleComposerFocus, setComposerDraftPrompt],
+  );
   const useArtifactTemplate = useCallback(
     (template: CodexArtifactTemplate) => {
       const composer = composerRef.current;
@@ -7739,6 +7776,16 @@ function ChatViewContent(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    {showDraftRecommendations ? (
+                      <DraftRecommendations
+                        recommendations={draftRecommendationsQuery.data?.recommendations ?? []}
+                        isPending={draftRecommendationsQuery.isPending}
+                        retryable={draftRecommendationsQuery.data?.retryable ?? false}
+                        error={draftRecommendationsQuery.error}
+                        onSelect={selectDraftRecommendation}
+                        onRetry={draftRecommendationsQuery.refresh}
+                      />
+                    ) : null}
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

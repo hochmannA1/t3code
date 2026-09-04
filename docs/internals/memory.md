@@ -14,6 +14,20 @@ References: [read-path prompt](https://github.com/openai/codex/blob/89a4eec6dafc
 
 The credential-scoped MCP toolkit exposes `memory_search`, `memory_read`, `memory_remember`, and `memory_forget`. Each request derives its project from the authenticated thread, checks current memory settings and thread policy, and restricts access to personal and current-project entries. Search/read responses are bounded. Source IDs are `threadId/turnId`, allowing deeper investigation through thread-history tools. Retrieval is not evidence that a model actually relied on the result.
 
+## New-task recommendations
+
+The Work empty-draft view requests zero to two recommendations through `memory.getRecommendations`. A null project ID selects personal memory only. A concrete project ID selects personal memory plus entries for that exact project, after the server confirms that the project exists in the current environment.
+
+Recommendation generation is a read-only `TextGeneration` operation. It uses the server's general text-generation model selection, which defaults to Codex `gpt-5.6-luna`, rather than the separate model used for memory extraction and maintenance. Codex, Claude, and OpenCode run it with the same isolated, tool-free controls as memory generation. Cursor and Grok return an explicit unsupported-operation error. Generation failures become a retryable empty result and do not block creating a task. The public read RPC cannot bypass the server cache.
+
+The generation schema accepts only `task`, `automation`, and `page`. Server validation trims empty values, removes duplicates, and caps the result after filtering. IDs are derived from validated content. Icons come from the client-side type map; generated content cannot choose a component, URL, command, provider, project, or permission mode.
+
+Results are persisted in the memory manifest under a freshness key derived from the prompt version, full scoped memory content, project identity, and model selection. A project-memory change therefore invalidates and removes only that project's derived result, while a personal-memory change removes every scope that includes it. Cache writes verify that their memory snapshot is still current, so forgotten content cannot be restored by an older in-flight generation. Missing results for the personal scope and up to six recently active projects are warmed after server activation, with at most two model calls running at once. Warmup runs in a background fiber and does not delay server readiness. Concurrent requests for the same fresh scope share one generation call. The persisted cache is capped at 64 results.
+
+The web query cache is keyed by environment and project, so a response for one draft target cannot populate another target.
+
+Selecting a recommendation copies its prompt into the current draft and focuses the composer. It does not send the prompt, create an automation, publish a page, or change the task's model or permissions. The user can edit the text before sending it through the normal turn path.
+
 ## Persistence and processing
 
 `Fork_003_Memory` creates `t3_memory_state` in the existing SQLite database. Its manifest contains the discovery cursor, pending jobs and retry times, source references, per-thread policies, suppression records, entry metadata, and daily and weekly maintenance progress. A separate expiring lease coordinates maintenance processes. It contains no note bodies. Markdown bodies are immutable content-addressed files under `<stateDir>/memories/notes/`; the root Markdown files are generated navigation indexes.

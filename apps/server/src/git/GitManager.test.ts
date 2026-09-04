@@ -277,6 +277,8 @@ function createTextGeneration(
 ): TextGeneration.TextGeneration["Service"] {
   const implementation: FakeGitTextGeneration = {
     generateMemory: () => Effect.die("Memory generation is not used by git workflows"),
+    generateMemoryRecommendations: () =>
+      Effect.die("Memory recommendation generation is not used by git workflows"),
     generateCommitMessage: (input) =>
       Effect.succeed({
         subject: "Implement stacked git actions",
@@ -301,6 +303,8 @@ function createTextGeneration(
 
   return {
     generateMemory: () => Effect.die("Memory generation is not used by git workflows"),
+    generateMemoryRecommendations: () =>
+      Effect.die("Memory recommendation generation is not used by git workflows"),
     generateCommitMessage: (input) =>
       implementation.generateCommitMessage(input).pipe(
         Effect.mapError(
