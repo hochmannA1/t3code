@@ -244,16 +244,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
    * accepts nothing but tokens issued from this path.
    */
   /**
-   * Deny on an unreadable settings file rather than letting the read failure
-   * escape: adding `ServerSettingsError` to `ProviderServiceError` would widen
-   * a union every caller handles, for a branch that only decides whether one
-   * optional toolset is attached. Denying is the safe direction — an explicit
-   * "off" silently becoming "on" would violate the user's stated choice,
-   * whereas the reverse costs an agent one toolset and is visible immediately.
+   * Thread tools are read-only and always available. Browser and automation
+   * tools follow their settings. An unreadable settings file withholds all
+   * tools for the session so a read failure cannot enable an optional toolkit.
    */
   const agentMcpCapabilities = serverSettings.getSettings.pipe(
     Effect.map((settings) => {
-      const capabilities = new Set<McpInvocationContext.McpCapability>();
+      const capabilities = new Set<McpInvocationContext.McpCapability>(["threads"]);
       if (settings.enableAgentBrowserAccess) capabilities.add("preview");
       if (settings.enableAgentAutomationAccess) capabilities.add("automations");
       return capabilities;

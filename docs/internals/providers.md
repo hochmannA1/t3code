@@ -43,6 +43,10 @@ assistant text. Persisted messages keep their serialized links.
 Adding a driver means writing the driver plus adapter and adding it to `BUILT_IN_DRIVERS`. No
 orchestration, contract, or client change is required for the common case.
 
+Provider sessions also receive T3's MCP tools, including read-only
+[thread history tools](./agent-thread-tools.md). The same server-side tools serve agents controlled
+through web, desktop, and mobile clients.
+
 ### Grok health check
 
 `checkGrokProviderStatus` never opens an ACP session. It runs `grok --version`, then `grok models`
