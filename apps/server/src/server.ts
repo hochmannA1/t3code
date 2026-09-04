@@ -311,6 +311,7 @@ const MemoryWorkerLive = Layer.effectDiscard(
         Effect.repeat(Schedule.spaced("1 minute")),
       ),
     );
+    yield* forkParked(memory.warmRecommendations());
   }),
 );
 

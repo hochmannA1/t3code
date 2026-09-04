@@ -57,6 +57,24 @@ export const MemoryEntry = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 export type MemoryEntry = typeof MemoryEntry.Type;
+export const MemoryRecommendationType = Schema.Literals(["task", "automation", "page"]);
+export type MemoryRecommendationType = typeof MemoryRecommendationType.Type;
+export const MemoryRecommendation = Schema.Struct({
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  type: MemoryRecommendationType,
+  label: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(8000)),
+});
+export type MemoryRecommendation = typeof MemoryRecommendation.Type;
+export const MemoryGetRecommendationsInput = Schema.Struct({
+  projectId: Schema.NullOr(ProjectId),
+});
+export type MemoryGetRecommendationsInput = typeof MemoryGetRecommendationsInput.Type;
+export const MemoryGetRecommendationsResult = Schema.Struct({
+  recommendations: Schema.Array(MemoryRecommendation).check(Schema.isMaxLength(2)),
+  retryable: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+});
+export type MemoryGetRecommendationsResult = typeof MemoryGetRecommendationsResult.Type;
 export const MemoryThreadPolicy = Schema.Struct({
   useMemories: Schema.Boolean,
   generateMemories: Schema.Boolean,

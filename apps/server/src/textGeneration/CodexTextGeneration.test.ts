@@ -214,6 +214,28 @@ function withFakeCodexEnv<A, E, R>(
 }
 
 it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
+  it.effect("generates recommendations in an isolated read-only process", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          recommendations: [{ type: "task", label: "Review storage", prompt: "Review storage." }],
+        }),
+        requireArg: "features.shell_tool=false",
+        stdinMustContain: "untrusted data",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateMemoryRecommendations({
+            cwd: "/does-not-exist-recommendation-test",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+            project: null,
+            memories: [],
+          });
+          expect(generated.recommendations[0]?.type).toBe("task");
+        }),
+    ),
+  );
+
   it.effect("dreams in an isolated read-only process with configured MCP servers disabled", () =>
     withFakeCodexEnv(
       {

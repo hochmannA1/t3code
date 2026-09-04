@@ -7,6 +7,8 @@ import {
   MemorySetThreadPolicyInput,
   MemoryThreadPolicy,
   MemoryError,
+  MemoryGetRecommendationsInput,
+  MemoryGetRecommendationsResult,
 } from "./memory.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
@@ -235,6 +237,7 @@ import { VcsError } from "./vcs.ts";
 export const WS_METHODS = {
   // Scheduled prompt automations
   memoryGetState: "memory.getState",
+  memoryGetRecommendations: "memory.getRecommendations",
   memoryUpsert: "memory.upsert",
   memoryForget: "memory.forget",
   memorySetThreadPolicy: "memory.setThreadPolicy",
@@ -401,6 +404,11 @@ export const WsMemoryGetStateRpc = Rpc.make(WS_METHODS.memoryGetState, {
   payload: MemoryStateInput,
   success: MemoryState,
   error: MemoryRpcError,
+});
+export const WsMemoryGetRecommendationsRpc = Rpc.make(WS_METHODS.memoryGetRecommendations, {
+  payload: MemoryGetRecommendationsInput,
+  success: MemoryGetRecommendationsResult,
+  error: EnvironmentAuthorizationError,
 });
 export const WsMemoryUpsertRpc = Rpc.make(WS_METHODS.memoryUpsert, {
   payload: MemoryUpsertInput,
@@ -1187,6 +1195,7 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
 
 export const WsRpcGroup = RpcGroup.make(
   WsMemoryGetStateRpc,
+  WsMemoryGetRecommendationsRpc,
   WsMemoryUpsertRpc,
   WsMemoryForgetRpc,
   WsMemorySetThreadPolicyRpc,

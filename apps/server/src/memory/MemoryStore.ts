@@ -2,6 +2,7 @@ import * as NodeCrypto from "node:crypto";
 import {
   MemoryEntry,
   MemoryError,
+  MemoryGetRecommendationsResult,
   MemoryThreadPolicy,
   ProjectId,
   ThreadId,
@@ -12,11 +13,12 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { ServerConfig } from "../config.ts";
 
-const EntryMetadata = Schema.Struct({
+export const EntryMetadata = Schema.Struct({
   id: Schema.String,
   projectId: Schema.NullOr(ProjectId),
   title: Schema.String,
@@ -28,6 +30,34 @@ const EntryMetadata = Schema.Struct({
   file: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}\.md$/)),
 });
 export type EntryMetadata = typeof EntryMetadata.Type;
+
+export const MemoryRecommendationCacheEntry = Schema.Struct({
+  projectId: Schema.NullOr(ProjectId),
+  result: MemoryGetRecommendationsResult,
+});
+export type MemoryRecommendationCacheEntry = typeof MemoryRecommendationCacheEntry.Type;
+
+const RecommendationCacheSource = Schema.Record(
+  Schema.String,
+  Schema.Union([MemoryRecommendationCacheEntry, MemoryGetRecommendationsResult]),
+);
+const RecommendationCacheCurrent = Schema.Record(Schema.String, MemoryRecommendationCacheEntry);
+const RecommendationCache = RecommendationCacheSource.pipe(
+  Schema.decodeTo(
+    RecommendationCacheCurrent,
+    SchemaTransformation.transformOrFail({
+      decode: (cache) =>
+        Effect.succeed(
+          Object.fromEntries(
+            Object.entries(cache).flatMap(([key, entry]) =>
+              "result" in entry ? [[key, entry] as const] : [],
+            ),
+          ) as typeof RecommendationCacheCurrent.Encoded,
+        ),
+      encode: (cache) => Effect.succeed(cache as typeof RecommendationCacheSource.Type),
+    }),
+  ),
+);
 
 export const MemorySource = Schema.Struct({
   id: Schema.String,
@@ -79,11 +109,14 @@ const Manifest = Schema.Struct({
   dreamRetryAt: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   lastError: Schema.NullOr(Schema.String),
   runRequested: Schema.Boolean,
+  recommendationCache: RecommendationCache.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type MemoryManifest = typeof Manifest.Type;
 const decodeManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(Manifest));
 const encodeManifest = Schema.encodeEffect(Schema.fromJsonString(Manifest));
 const decodeEntry = Schema.decodeUnknownEffect(MemoryEntry);
+const encodeEntryMetadata = Schema.encodeSync(Schema.fromJsonString(Schema.Array(EntryMetadata)));
+const MAX_RECOMMENDATION_CACHE_ENTRIES = 64;
 
 export const emptyManifest = (): MemoryManifest => ({
   version: 1,
@@ -107,11 +140,53 @@ export const emptyManifest = (): MemoryManifest => ({
   dreamRetryAt: "",
   lastError: null,
   runRequested: false,
+  recommendationCache: {},
 });
 
 const failed = (message: string) => () => new MemoryError({ message });
 export const fingerprint = (value: string) =>
   NodeCrypto.createHash("sha256").update(value).digest("hex");
+
+const scopedRecommendationMetadata = (
+  entries: ReadonlyArray<EntryMetadata>,
+  projectId: ProjectId | null,
+) =>
+  entries
+    .filter((entry) => entry.projectId === null || entry.projectId === projectId)
+    .toSorted((left, right) => left.id.localeCompare(right.id));
+
+export const recommendationMemoryDigest = (
+  entries: ReadonlyArray<EntryMetadata>,
+  projectId: ProjectId | null,
+) => fingerprint(encodeEntryMetadata(scopedRecommendationMetadata(entries, projectId)));
+
+const changedEntryScopes = (
+  before: ReadonlyArray<EntryMetadata>,
+  after: ReadonlyArray<EntryMetadata>,
+) => {
+  const beforeById = new Map(before.map((entry) => [entry.id, entry]));
+  const afterById = new Map(after.map((entry) => [entry.id, entry]));
+  const changed = new Set<ProjectId | null>();
+  for (const id of new Set([...beforeById.keys(), ...afterById.keys()])) {
+    const previous = beforeById.get(id);
+    const next = afterById.get(id);
+    if (JSON.stringify(previous) === JSON.stringify(next)) continue;
+    if (previous) changed.add(previous.projectId);
+    if (next) changed.add(next.projectId);
+  }
+  return changed;
+};
+
+const purgeRecommendationCache = (
+  cache: MemoryManifest["recommendationCache"],
+  scopes: ReadonlySet<ProjectId | null>,
+) => {
+  if (scopes.size === 0) return cache;
+  if (scopes.has(null)) return {};
+  return Object.fromEntries(
+    Object.entries(cache).filter(([, entry]) => !scopes.has(entry.projectId)),
+  );
+};
 
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -153,6 +228,7 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const current = yield* read();
           const changed = yield* change(current);
+          const changedScopes = changedEntryScopes(current.entries, changed.manifest.entries);
           const referencedSources = new Set([
             ...changed.manifest.entries.flatMap((entry) => entry.sourceIds),
             ...changed.manifest.pending.map((source) => source.id),
@@ -161,6 +237,10 @@ export const make = Effect.gen(function* () {
           const next = {
             ...changed.manifest,
             revision: current.revision + 1,
+            recommendationCache: purgeRecommendationCache(
+              changed.manifest.recommendationCache,
+              changedScopes,
+            ),
             sources: Object.fromEntries(
               Object.entries(changed.manifest.sources).filter(([id]) => referencedSources.has(id)),
             ),
@@ -181,6 +261,38 @@ export const make = Effect.gen(function* () {
       return { ...metadata, file } satisfies EntryMetadata;
     },
     Effect.mapError(failed("Memory content could not be saved.")),
+  );
+
+  // Recommendation cache writes are derived state. Keeping the semantic revision
+  // unchanged prevents background warming from invalidating memory maintenance work.
+  const cacheRecommendations = Effect.fn("MemoryStore.cacheRecommendations")(
+    function* (
+      freshnessKey: string,
+      projectId: ProjectId | null,
+      memoryDigest: string,
+      result: MemoryGetRecommendationsResult,
+    ) {
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const current = yield* read();
+          if (recommendationMemoryDigest(current.entries, projectId) !== memoryDigest) return false;
+          const entries = Object.entries(current.recommendationCache).filter(
+            ([key]) => key !== freshnessKey,
+          );
+          const next: MemoryManifest = {
+            ...current,
+            recommendationCache: Object.fromEntries(
+              [...entries, [freshnessKey, { projectId, result }] as const].slice(
+                -MAX_RECOMMENDATION_CACHE_ENTRIES,
+              ),
+            ),
+          };
+          yield* sql`UPDATE t3_memory_state SET manifest_json = ${yield* encodeManifest(next)} WHERE id = 1`;
+          return true;
+        }),
+      );
+    },
+    Effect.mapError(failed("Memory recommendations could not be cached.")),
   );
 
   const loadEntry = Effect.fn("MemoryStore.loadEntry")(
@@ -283,6 +395,7 @@ export const make = Effect.gen(function* () {
     read,
     update,
     writeEntry,
+    cacheRecommendations,
     loadEntry,
     loadEntries,
     acquire,

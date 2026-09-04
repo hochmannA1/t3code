@@ -1,4 +1,5 @@
 import { unsupportedMemoryGeneration } from "./MemoryGeneration.ts";
+import { unsupportedMemoryRecommendationGeneration } from "./MemoryRecommendationGeneration.ts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -264,6 +265,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
 
   return {
     generateMemory: unsupportedMemoryGeneration("Grok"),
+    generateMemoryRecommendations: unsupportedMemoryRecommendationGeneration("Grok"),
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

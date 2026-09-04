@@ -1,4 +1,8 @@
 import { buildMemoryPrompt, validateMemorySources } from "./MemoryGeneration.ts";
+import {
+  buildMemoryRecommendationPrompt,
+  validateMemoryRecommendations,
+} from "./MemoryRecommendationGeneration.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
@@ -38,6 +42,7 @@ const OpenCodeTextGenerationOperation = Schema.Literals([
   "generateBranchName",
   "generateThreadTitle",
   "generateMemory",
+  "generateMemoryRecommendations",
 ]);
 
 type OpenCodeTextGenerationOperation = typeof OpenCodeTextGenerationOperation.Type;
@@ -235,7 +240,10 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             cwd: input.cwd,
           });
         }
-        if (input.operation === "generateMemory") {
+        if (
+          input.operation === "generateMemory" ||
+          input.operation === "generateMemoryRecommendations"
+        ) {
           const sessionId = session.data.id;
           yield* Effect.addFinalizer(() =>
             Effect.tryPromise({
@@ -414,6 +422,31 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     return yield* validateMemorySources(generated, sourceIds);
   }, Effect.scoped);
 
+  const generateMemoryRecommendations: TextGeneration.TextGeneration["Service"]["generateMemoryRecommendations"] =
+    Effect.fn("OpenCodeTextGeneration.generateMemoryRecommendations")(function* (input) {
+      const { prompt, outputSchema } = buildMemoryRecommendationPrompt(input);
+      const cwd = yield* fileSystem
+        .makeTempDirectoryScoped({ prefix: "t3code-memory-recommendations-opencode-" })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new TextGenerationError({
+                operation: "generateMemoryRecommendations",
+                detail: "Failed to create isolated recommendation working directory.",
+                cause,
+              }),
+          ),
+        );
+      const generated = yield* runOpenCodeJson({
+        operation: "generateMemoryRecommendations",
+        cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return yield* validateMemoryRecommendations(generated);
+    }, Effect.scoped);
+
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("OpenCodeTextGeneration.generateCommitMessage")(function* (input) {
       const { prompt, outputSchema } = buildCommitMessagePrompt({
@@ -508,6 +541,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
 
   return {
     generateMemory,
+    generateMemoryRecommendations,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

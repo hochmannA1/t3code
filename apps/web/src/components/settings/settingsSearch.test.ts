@@ -88,6 +88,7 @@ describe("searchSettings", () => {
     expect(searchSettings("binary path")[0]?.id).toBe("providers");
     expect(searchSettings("authorized clients")[0]?.id).toBe("connections-environment");
     expect(searchSettings("administrative access")[0]?.id).toBe("connections-environment");
+    expect(searchSettings("new task recommendations")[0]?.id).toBe("text-generation-model");
   });
 
   it("lists thread confirmations in panel order", () => {

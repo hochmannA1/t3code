@@ -3,6 +3,10 @@ import {
   validateMemorySources,
   memoryCliFailureDetail,
 } from "./MemoryGeneration.ts";
+import {
+  buildMemoryRecommendationPrompt,
+  validateMemoryRecommendations,
+} from "./MemoryRecommendationGeneration.ts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -145,6 +149,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generatePrContent"
       | "generateBranchName"
       | "generateMemory"
+      | "generateMemoryRecommendations"
       | "generateThreadTitle",
     value: unknown,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -165,6 +170,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generatePrContent"
       | "generateBranchName"
       | "generateMemory"
+      | "generateMemoryRecommendations"
       | "generateThreadTitle",
     attachments: TextGeneration.BranchNameGenerationInput["attachments"],
   ): Effect.fn.Return<MaterializedImageAttachments, TextGenerationError> {
@@ -208,6 +214,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generatePrContent"
       | "generateBranchName"
       | "generateMemory"
+      | "generateMemoryRecommendations"
       | "generateThreadTitle";
     cwd: string;
     prompt: string;
@@ -225,8 +232,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
 
     const runCodexCommand = Effect.fn("runCodexJson.runCodexCommand")(function* () {
       const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
-      const memoryJob = operation === "generateMemory";
-      const commandCwd = memoryJob
+      const isolatedJob =
+        operation === "generateMemory" || operation === "generateMemoryRecommendations";
+      const commandCwd = isolatedJob
         ? yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-memory-codex-" }).pipe(
             Effect.mapError(
               (cause) =>
@@ -247,7 +255,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       // Injected servers need a valid transport during bootstrap even when disabled;
       // an inert placeholder keeps this independent of their credentials and commands.
       let memoryMcpConfig: string[] = [];
-      if (memoryJob) {
+      if (isolatedJob) {
         const listSpawn = yield* resolveSpawnCommand(
           codexConfig.binaryPath || "codex",
           [
@@ -328,7 +336,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           "--skip-git-repo-check",
           "-s",
           "read-only",
-          ...(memoryJob
+          ...(isolatedJob
             ? [...MEMORY_CODEX_CONFIG.flatMap((value) => ["--config", value]), ...memoryMcpConfig]
             : []),
           "--model",
@@ -381,7 +389,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
         return yield* new TextGenerationError({
           operation,
-          detail: memoryJob
+          detail: isolatedJob
             ? memoryCliFailureDetail("Codex", stderr, Number(exitCode))
             : detail.length > 0
               ? `Codex CLI command failed: ${detail}`
@@ -451,6 +459,19 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     });
     return yield* validateMemorySources(generated, sourceIds);
   });
+
+  const generateMemoryRecommendations: TextGeneration.TextGeneration["Service"]["generateMemoryRecommendations"] =
+    Effect.fn("CodexTextGeneration.generateMemoryRecommendations")(function* (input) {
+      const { prompt, outputSchema } = buildMemoryRecommendationPrompt(input);
+      const generated = yield* runCodexJson({
+        operation: "generateMemoryRecommendations",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return yield* validateMemoryRecommendations(generated);
+    });
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("CodexTextGeneration.generateCommitMessage")(function* (input) {
@@ -558,6 +579,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
 
   return {
     generateMemory,
+    generateMemoryRecommendations,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

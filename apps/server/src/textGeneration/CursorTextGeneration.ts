@@ -1,4 +1,5 @@
 import { unsupportedMemoryGeneration } from "./MemoryGeneration.ts";
+import { unsupportedMemoryRecommendationGeneration } from "./MemoryRecommendationGeneration.ts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -262,6 +263,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
 
   return {
     generateMemory: unsupportedMemoryGeneration("Cursor"),
+    generateMemoryRecommendations: unsupportedMemoryRecommendationGeneration("Cursor"),
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

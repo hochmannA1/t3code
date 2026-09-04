@@ -22,6 +22,8 @@ const makeStubTextGeneration = (
     generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
     generateMemory: () => Effect.die("generateMemory stub not configured for this test"),
+    generateMemoryRecommendations: () =>
+      Effect.die("generateMemoryRecommendations stub not configured for this test"),
     ...overrides,
   });
 
@@ -61,6 +63,39 @@ const makeStubRegistry = (
 };
 
 describe("makeTextGenerationFromRegistry", () => {
+  it.effect("routes memory recommendations through the selected text-generation instance", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex_recommendations");
+      const instance = makeStubInstance(
+        instanceId,
+        makeStubTextGeneration({
+          generateMemoryRecommendations: (input) =>
+            Effect.succeed({
+              recommendations: [
+                {
+                  id: "memory-test",
+                  type: "task",
+                  label: input.project?.title ?? "Personal task",
+                  prompt: "Start the useful follow-up.",
+                },
+              ],
+              retryable: false,
+            }),
+        }),
+      );
+      const generation = TextGeneration.makeTextGenerationFromRegistry(
+        makeStubRegistry([instance]),
+      );
+      const result = yield* generation.generateMemoryRecommendations({
+        cwd: process.cwd(),
+        modelSelection: createModelSelection(instanceId, "gpt-5.6-luna"),
+        project: { title: "T3 Code" },
+        memories: [],
+      });
+      expect(result.recommendations[0]?.label).toBe("T3 Code");
+    }),
+  );
+
   it.effect("delegates to the matching instance's textGeneration closure", () =>
     Effect.gen(function* () {
       const personalId = ProviderInstanceId.make("codex_personal");
