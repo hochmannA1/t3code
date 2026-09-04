@@ -1,5 +1,28 @@
 # Organizing threads
 
+## Finding previous conversations with your agent
+
+Ask your agent to find a previous discussion, list recent threads, or read the conversation in a
+matching thread. For example, ask "Find our discussion about the login error" or "List this
+project's threads by last update."
+
+Agents can search thread titles, your messages, and final assistant replies. Searches default to
+the current project. You can ask to search all projects on the same environment or include archived
+threads. Deleted threads and deleted projects are excluded. Other connected environments are not
+searched automatically.
+
+Thread history tools are read-only and available independently of the browser and automation
+access settings. Their project default narrows results; agents can explicitly request history
+across the environment. Sorting changes the returned list, not the sidebar order. These tools do
+not rename, pin, archive, delete, or send messages to threads.
+
+Results are paginated, and long messages arrive in chunks. The agent can request more results or
+the rest of a message when needed. Tool activity appears in the conversation on web, desktop, and mobile.
+If an existing provider session does not show the tools after a server update, restart that session.
+Externally managed OpenCode servers do not receive T3's built-in tools automatically.
+
+## Pinning and settling threads
+
 Pin a thread from its context menu to keep it in the pinned section above your active work.
 `mod+shift+p` pins or unpins the thread you have open. Pinned threads are shown independently of
 their project, including when you connect to more than one environment.

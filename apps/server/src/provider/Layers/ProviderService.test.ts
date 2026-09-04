@@ -23,6 +23,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
+  ServerSettingsError,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -2454,6 +2455,7 @@ describe("agent MCP access", () => {
       readonly enableAgentAutomationAccess: boolean;
     },
     threadId: ThreadId,
+    settingsReadError?: ServerSettingsError,
   ) =>
     Effect.gen(function* () {
       const issued: Array<{
@@ -2484,7 +2486,20 @@ describe("agent MCP access", () => {
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(ServerSettings.ServerSettingsService.layerTest(settings)),
+        Layer.provide(
+          Layer.effect(
+            ServerSettings.ServerSettingsService,
+            Effect.gen(function* () {
+              const service = yield* ServerSettings.ServerSettingsService;
+              return {
+                ...service,
+                getSettings: settingsReadError
+                  ? Effect.fail(settingsReadError)
+                  : service.getSettings,
+              };
+            }),
+          ).pipe(Layer.provide(ServerSettings.layerTest(settings))),
+        ),
         Layer.provide(serverConfigTestLayer),
         Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
@@ -2508,29 +2523,10 @@ describe("agent MCP access", () => {
       return issued;
     });
 
-  // Credential issuance is the observable that matters: it is the only place a
-  // credential is minted, and `/mcp` accepts nothing else, so withholding it is
-  // what actually denies every provider and external MCP client.
-  it.effect("requests no MCP credential when every agent toolkit is off", () =>
+  it.effect("issues read-only thread access when optional agent toolkits are off", () =>
     Effect.gen(function* () {
+      const threadId = asThreadId("thread-tools-off");
       const issued = yield* startSessionWith(
-        {
-          enableAgentBrowserAccess: false,
-          enableAgentAutomationAccess: false,
-        },
-        asThreadId("thread-tools-off"),
-      );
-
-      assert.deepEqual(issued, []);
-    }).pipe(Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("revokes an already-issued credential when access is off", () =>
-    Effect.gen(function* () {
-      const threadId = asThreadId("thread-browser-revoke");
-      revokedThreads.length = 0;
-
-      yield* startSessionWith(
         {
           enableAgentBrowserAccess: false,
           enableAgentAutomationAccess: false,
@@ -2538,14 +2534,39 @@ describe("agent MCP access", () => {
         threadId,
       );
 
-      // Clearing the in-memory map is not enough: a token issued before the
-      // toggle flipped stays valid against `/mcp` for its whole liveness
-      // window, and later turns refresh it.
+      assert.deepEqual(issued, [
+        {
+          threadId,
+          capabilities: new Set<McpInvocationContext.McpCapability>(["threads"]),
+        },
+      ]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds and revokes MCP credentials when settings cannot be read", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-browser-revoke");
+      revokedThreads.length = 0;
+
+      const issued = yield* startSessionWith(
+        {
+          enableAgentBrowserAccess: false,
+          enableAgentAutomationAccess: false,
+        },
+        threadId,
+        new ServerSettingsError({
+          settingsPath: "<memory>",
+          operation: "read-file",
+          cause: new Error("Settings could not be read"),
+        }),
+      );
+
+      assert.deepEqual(issued, []);
       assert.deepEqual(revokedThreads, [threadId]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("issues only the enabled agent capabilities", () =>
+  it.effect("adds enabled optional capabilities to read-only thread access", () =>
     Effect.gen(function* () {
       const browserThreadId = asThreadId("thread-browser-on");
       const automationsThreadId = asThreadId("thread-automations-on");
@@ -2568,13 +2589,13 @@ describe("agent MCP access", () => {
       assert.deepEqual(browserIssued, [
         {
           threadId: browserThreadId,
-          capabilities: new Set<McpInvocationContext.McpCapability>(["preview"]),
+          capabilities: new Set<McpInvocationContext.McpCapability>(["threads", "preview"]),
         },
       ]);
       assert.deepEqual(automationsIssued, [
         {
           threadId: automationsThreadId,
-          capabilities: new Set<McpInvocationContext.McpCapability>(["automations"]),
+          capabilities: new Set<McpInvocationContext.McpCapability>(["threads", "automations"]),
         },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
