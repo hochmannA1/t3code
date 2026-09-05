@@ -158,6 +158,37 @@ const dependencies = (settings: Parameters<typeof ServerSettings.layerTest>[0] =
   ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("memory lifecycle", () => {
+  it.effect(
+    "uses global recall for standalone chats and explicit reads while named projects stay scoped",
+    () =>
+      Effect.gen(function* () {
+        const { service } = yield* setup((input) => Effect.succeed(resultFor(input)));
+        for (const target of [null, projectId, otherProjectId]) {
+          yield* service.upsert({
+            projectId: target,
+            title: target ?? "Personal preference",
+            text: `A durable decision for ${target ?? "personal memory"}.`,
+            pinned: true,
+          });
+        }
+        assert.equal((yield* service.forAgent(threadId)).entries.length, 2);
+        assert.equal((yield* service.forAgent(threadId, "all")).entries.length, 3);
+        assert.notInclude(yield* service.contextForThread(threadId, "decision"), otherProjectId);
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE projection_projects SET title = 'review-my-memory',
+        workspace_root = '/custom/tasks/2026-09-05/review-my-memory' WHERE project_id = ${projectId}`;
+        assert.equal((yield* service.getState({ threadId })).entries.length, 3);
+        assert.equal((yield* service.forAgent(threadId)).entries.length, 3);
+        assert.include(
+          yield* service.contextForThread(threadId, "Welche Erinnerungen hast du?"),
+          otherProjectId,
+        );
+        yield* service.setThreadPolicy({ threadId, useMemories: false, generateMemories: true });
+        assert.equal((yield* Effect.flip(service.forAgent(threadId, "all")))._tag, "MemoryError");
+        assert.equal(yield* service.contextForThread(threadId, "memory"), "");
+      }).pipe(Effect.provide(dependencies())),
+  );
+
   it.effect("shares and caches global memory recommendations without failing the RPC", () =>
     Effect.gen(function* () {
       const inputs: MemoryRecommendationGenerationInput[] = [];
@@ -773,6 +804,78 @@ describe("memory lifecycle", () => {
         inputs.map((input) => input.mode),
         ["extract"],
       );
+    }).pipe(Effect.provide(dependencies())),
+  );
+
+  it.effect(
+    "promotes reusable chat lessons for cross-chat consolidation without moving project facts",
+    () =>
+      Effect.gen(function* () {
+        const inputs: MemoryGenerationInput[] = [];
+        const { service } = yield* setup((input) => {
+          inputs.push(input);
+          return Effect.succeed({
+            entries: [
+              {
+                ...resultFor(input).entries[0]!,
+                scope:
+                  input.mode !== "extract" && input.memoryScope === "chat" ? "personal" : "project",
+              },
+            ],
+          });
+        });
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE projection_projects SET title = 'first-chat',
+        workspace_root = '/tasks/2026-09-05/first-chat' WHERE project_id = ${projectId}`;
+        yield* sql`UPDATE projection_projects SET title = 'second-chat',
+        workspace_root = '/tasks/2026-09-05/second-chat' WHERE project_id = ${otherProjectId}`;
+        yield* insertCompletedThreads(1);
+        yield* sql`UPDATE projection_threads SET project_id = ${otherProjectId} WHERE thread_id = 'history-thread-0'`;
+        yield* TestClock.adjust("10 minutes");
+        yield* service.tick();
+        assert.deepEqual(
+          inputs.map((input) => input.memoryScope),
+          ["chat", "chat"],
+        );
+        assert.sameMembers(
+          (yield* service.getState({})).entries.map((entry) => entry.projectId),
+          [projectId, otherProjectId],
+        );
+        yield* TestClock.adjust("24 hours");
+        yield* service.tick();
+        yield* service.tick();
+        yield* service.tick();
+        const entries = (yield* service.getState({})).entries;
+        assert.equal(entries.length, 1);
+        assert.equal(entries[0]!.projectId, null);
+        assert.sameMembers(
+          [...entries[0]!.sourceIds],
+          ["memory-thread/turn", "history-thread-0/history-turn-0"],
+        );
+        assert.isTrue(
+          inputs.some(
+            (input) =>
+              input.mode === "consolidate" &&
+              input.memoryScope === "personal" &&
+              input.sources.length === 2,
+          ),
+        );
+      }).pipe(Effect.provide(dependencies())),
+  );
+
+  it.effect("retains task-specific facts in their standalone workspace during review", () =>
+    Effect.gen(function* () {
+      const { service } = yield* setup((input) => Effect.succeed(resultFor(input)));
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE projection_projects SET title = 'first-chat',
+        workspace_root = '/tasks/2026-09-05/first-chat' WHERE project_id = ${projectId}`;
+      yield* TestClock.adjust("10 minutes");
+      yield* service.tick();
+      yield* TestClock.adjust("24 hours");
+      yield* service.tick();
+      const entries = (yield* service.getState({})).entries;
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0]!.projectId, projectId);
     }).pipe(Effect.provide(dependencies())),
   );
 

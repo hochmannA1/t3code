@@ -13,6 +13,7 @@ import {
   type ResponseProfile,
   type TurnId,
 } from "@t3tools/contracts";
+import { withChatWorkspaceContext } from "../../provider/ChatWorkspaceContext.ts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
@@ -865,6 +866,7 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
+    const project = yield* resolveProject(thread.projectId);
     const normalizedInput = toNonEmptyProviderInput(
       appendFileAttachmentPromptText({
         text: input.messageText,
@@ -917,7 +919,7 @@ const make = Effect.gen(function* () {
     return {
       threadId: input.threadId,
       ...(memoryContext ? { memoryContext } : {}),
-      ...(normalizedInput ? { input: normalizedInput } : {}),
+      ...(normalizedInput ? { input: withChatWorkspaceContext(normalizedInput, project) } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),

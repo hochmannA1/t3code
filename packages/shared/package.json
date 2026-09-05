@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./projectContext": {
+      "types": "./src/projectContext.ts",
+      "import": "./src/projectContext.ts"
+    },
     "./themePalettes": {
       "types": "./src/themePalettes.ts",
       "import": "./src/themePalettes.ts"

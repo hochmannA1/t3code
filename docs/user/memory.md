@@ -2,7 +2,7 @@
 
 T3 Code can learn useful context from completed conversations and recall it in later work. Memory and background maintenance are enabled by default. Open **Settings → General → Memory** to configure each connected environment.
 
-Memory stays with the environment that owns the conversations. Personal memories apply across that environment's projects; project memories apply to the project and its worktrees. Connecting from another device uses the same server-owned memory. Memory is not automatically copied between environments or shared with other users.
+Memory stays with the environment that owns the conversations. Personal memories apply across that environment's projects. Project tasks default to their project's notes and personal memory; normal chats can recall across the environment. Connecting from another device uses the same server-owned memory. Memory is not automatically copied between environments or shared with other users.
 
 ## Choose a model
 
@@ -60,3 +60,11 @@ Personal memory can include established preferences and confirmed workflows usef
 Antigravity does not support background memory generation or memory-based recommendations.
 Choose Codex, Claude, or OpenCode for those jobs in Settings. Existing recalled memories can still
 be included in Antigravity conversations.
+
+Normal chats can recall memories across the current environment, including earlier task workspaces. A named project starts with personal memory and that project's notes; agents can explicitly widen a search or read when you ask about other projects. Ask for a memory overview to list available entries without guessing search keywords. A search with no matches does not mean the store is empty, particularly when your question and the saved notes use different languages.
+
+When available, recall includes paths to the generated memory index and summary. They are read-only views; memory tools remain authoritative and work when the agent cannot access those files. File routes and recalled entries share the same 2,000-token default budget.
+
+Dreaming can move a confirmed reusable preference or workflow from a normal chat into personal memory, retaining its source links. Later personal-memory review can combine lessons from several chats. Task-specific facts stay with their original workspace. Existing memories are reconsidered by the next weekly dream or **Run maintenance now**; this does not automatically rewrite every old note.
+
+Your provider may also have its own memory. A T3 memory overview should use T3's inventory and identify any separate provider memory rather than combining their counts.

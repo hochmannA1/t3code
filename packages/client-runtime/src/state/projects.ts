@@ -9,21 +9,7 @@ import {
 
 export { normalizeProjectPathForComparison, normalizeProjectPathForDispatch };
 
-export function isStandaloneProject(project: {
-  readonly title: string;
-  readonly workspaceRoot: string;
-}): boolean {
-  const segments = project.workspaceRoot.split(/[\\/]+/u).filter(Boolean);
-  const directoryName = segments.at(-1);
-  const dateDirectory = segments.at(-2);
-  return (
-    directoryName === project.title &&
-    directoryName.length <= 64 &&
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(directoryName) &&
-    dateDirectory !== undefined &&
-    /^\d{4}-\d{2}-\d{2}$/u.test(dateDirectory)
-  );
-}
+export { isStandaloneProject } from "@t3tools/shared/projectContext";
 
 export const isWindowsPlatform = (platform: string): boolean => {
   return /^win(dows)?/i.test(platform);

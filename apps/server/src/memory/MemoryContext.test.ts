@@ -26,6 +26,46 @@ function records(value: string): Array<Record<string, unknown>> {
 }
 
 describe("memory context", () => {
+  it("provides bounded read-only file routes alongside authoritative tool guidance", () => {
+    const result = buildMemoryContext({
+      query: "previous work",
+      entries: [entry()],
+      projectId: "project-a",
+      memoryDirectory: "/tmp/t3/userdata/memories",
+      maxTokens: 2_000,
+    });
+    expect(records(result)[0]).toEqual({
+      kind: "files",
+      memoryPath: "/tmp/t3/userdata/memories/MEMORY.md",
+      summaryPath: "/tmp/t3/userdata/memories/memory_summary.md",
+      readOnly: true,
+    });
+    expect(result).toContain("MCP tools remain authoritative");
+    expect(result.length).toBeLessThanOrEqual(8_000);
+    const tiny = buildMemoryContext({
+      query: "previous work",
+      entries: [],
+      projectId: undefined,
+      memoryDirectory: "/tmp/" + "long-path".repeat(1000),
+      maxTokens: 256,
+    });
+    expect(tiny.length).toBeLessThanOrEqual(1024);
+    expect(records(tiny)).toEqual([]);
+    expect(tiny).toContain("memory_list");
+  });
+
+  it("includes an environment-wide index for a projectless chat without dropping project provenance", () => {
+    const result = buildMemoryContext({
+      entries: [entry(), entry({ id: "other", projectId: "project-b" })],
+      query: "Welche Erinnerungen hast du?",
+      projectId: undefined,
+      maxTokens: 2_000,
+    });
+    expect(records(result).map((item) => item.projectId)).toEqual(["project-a", "project-b"]);
+    expect(result).toContain("memory_list");
+    expect(result).toContain("Zero search matches does not mean memory is empty");
+  });
+
   it("recalls relevant project and personal facts while excluding other projects", () => {
     const output = records(
       context([

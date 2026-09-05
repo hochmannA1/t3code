@@ -168,6 +168,7 @@ describe("ProviderCommandReactor", () => {
 
   async function createHarness(input?: {
     readonly memoryContext?: string;
+    readonly standalone?: boolean;
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
@@ -263,7 +264,7 @@ describe("ProviderCommandReactor", () => {
         ),
       );
     });
-    const sendTurn = vi.fn((_: unknown) =>
+    const sendTurn = vi.fn<ProviderServiceShape["sendTurn"]>(() =>
       Effect.succeed({
         threadId: ThreadId.make("thread-1"),
         turnId: asTurnId("turn-1"),
@@ -498,8 +499,10 @@ describe("ProviderCommandReactor", () => {
         type: "project.create",
         commandId: CommandId.make("cmd-project-create"),
         projectId: asProjectId("project-1"),
-        title: "Provider Project",
-        workspaceRoot: "/tmp/provider-project",
+        title: input?.standalone ? "my-request" : "Provider Project",
+        workspaceRoot: input?.standalone
+          ? "/tmp/chat-storage/2026-09-05/my-request"
+          : "/tmp/provider-project",
         defaultModelSelection: modelSelection,
         createdAt: now,
       }),
@@ -624,13 +627,26 @@ describe("ProviderCommandReactor", () => {
   }
 
   effectIt.effect.each([
-    "",
-    "<t3-memory>Search project notes before diagnosing the build.</t3-memory>",
+    { memoryContext: "", standalone: false },
+    {
+      memoryContext: "<t3-memory>Search project notes before diagnosing the build.</t3-memory>",
+      standalone: false,
+    },
+    { memoryContext: "", standalone: true },
+    { memoryContext: "<t3-memory>Prefer concise answers.</t3-memory>", standalone: true },
   ])(
-    "adds recalled memory to the outgoing turn without changing the user message: %s",
-    (memoryContext) =>
+    "adds memory and chat workspace context without changing the user message: %j",
+    ({ memoryContext, standalone }) =>
       Effect.gen(function* () {
-        const harness = yield* Effect.promise(() => createHarness({ memoryContext }));
+        const harness = yield* Effect.promise(() => createHarness({ memoryContext, standalone }));
+        if (standalone) {
+          yield* harness.engine.dispatch({
+            type: "thread.meta.update",
+            commandId: CommandId.make("rename-chat-before-turn"),
+            threadId: ThreadId.make("thread-1"),
+            title: "A renamed conversation",
+          });
+        }
         const sent = yield* Deferred.make<void>();
         harness.sendTurn.mockImplementation(() =>
           Deferred.succeed(sent, undefined).pipe(
@@ -660,7 +676,16 @@ describe("ProviderCommandReactor", () => {
           ThreadId.make("thread-1"),
           "Diagnose the build",
         );
-        expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: "Diagnose the build" });
+        const providerInput = harness.sendTurn.mock.calls[0]?.[0].input;
+        if (standalone) {
+          expect(providerInput).toContain("Diagnose the build");
+          expect(providerInput).toContain(
+            "This is a chat started without a user-selected project.",
+          );
+          expect(providerInput).not.toContain("my-request");
+        } else {
+          expect(providerInput).toBe("Diagnose the build");
+        }
         if (memoryContext) {
           expect(harness.sendTurn.mock.calls[0]?.[0]).toHaveProperty(
             "memoryContext",

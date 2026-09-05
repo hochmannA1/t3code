@@ -1,4 +1,5 @@
 import * as NodeCrypto from "node:crypto";
+import { isStandaloneProject } from "@t3tools/shared/projectContext";
 import {
   MemoryError,
   MemoryEntry,
@@ -218,9 +219,10 @@ export const make = Effect.gen(function* () {
       );
       return yield* Deferred.await(deferred);
     },
-    Effect.orElseSucceed(
-      (): MemoryGetRecommendationsResult => ({ recommendations: [], retryable: true }),
-    ),
+    Effect.orElseSucceed((): MemoryGetRecommendationsResult => ({
+      recommendations: [],
+      retryable: true,
+    })),
   );
 
   const warmRecommendations = Effect.fn("MemoryService.warmRecommendations")(function* () {
@@ -236,7 +238,7 @@ export const make = Effect.gen(function* () {
   ): Effect.fn.Return<MemoryState, MemoryError> {
     const manifest = yield* store.read();
     const projectId = input.threadId
-      ? yield* reader.projectForThread(input.threadId)
+      ? yield* reader.memoryScopeForThread(input.threadId)
       : input.projectId;
     return {
       entries: yield* scopedEntries(manifest, projectId),
@@ -342,20 +344,21 @@ export const make = Effect.gen(function* () {
       if (!preferences.enabled || !preferences.useMemories) return "";
       const manifest = yield* store.read();
       if (!policy(manifest, threadId).useMemories || manifest.entries.length === 0) return "";
-      const projectId = yield* reader.projectForThread(threadId);
+      const projectId = yield* reader.memoryScopeForThread(threadId);
       const entries = yield* scopedEntries(manifest, projectId);
       return buildMemoryContext({
         query,
         entries,
         projectId,
         maxTokens: preferences.maxContextTokens,
+        memoryDirectory: store.directory,
       });
     },
     Effect.mapError((error) => new MemoryError({ message: messageFrom(error) })),
   );
 
   const forAgent = Effect.fn("MemoryService.forAgent")(
-    function* (threadId: ThreadId) {
+    function* (threadId: ThreadId, scope: "current" | "all" = "current") {
       const preferences = (yield* settings.getSettings).memory;
       const manifest = yield* store.read();
       if (
@@ -367,7 +370,10 @@ export const make = Effect.gen(function* () {
           message: "Memory access is disabled for this thread or environment.",
         });
       }
-      return yield* getState({ threadId });
+      // Validate the invoking thread even when the caller explicitly widens the read scope.
+      if (scope === "all") yield* reader.projectForThread(threadId);
+      const state = yield* getState(scope === "all" ? {} : { threadId });
+      return { ...state, threadPolicy: policy(manifest, threadId) };
     },
     Effect.mapError((error) => new MemoryError({ message: messageFrom(error) })),
   );
@@ -496,6 +502,7 @@ export const make = Effect.gen(function* () {
     yield* store.loadEntries(
       manifest.entries.filter((entry) => entry.sourceIds.includes(source.id)),
     );
+    const sourceScope = yield* reader.memoryScopeForThread(source.threadId);
     const evidence =
       source.kind === "conversation" ? yield* reader.readConversation(source) : sourceText(row);
     const generated = yield* generation
@@ -503,6 +510,7 @@ export const make = Effect.gen(function* () {
         cwd: config.stateDir,
         modelSelection: preferences.modelSelection,
         mode: "extract",
+        memoryScope: sourceScope === undefined ? "chat" : "project",
         sources: [{ id: source.id, text: evidence }],
       })
       .pipe(Effect.timeout("90 seconds"));
@@ -637,6 +645,10 @@ export const make = Effect.gen(function* () {
     )) {
       const before = digestEntries(group);
       if (progress[key] === before || group.length === 0) continue;
+      const groupProject = group[0]!.projectId;
+      const project =
+        groupProject === null ? undefined : yield* reader.projectForRecommendation(groupProject);
+      const standalone = project !== undefined && isStandaloneProject(project);
       // A maintenance call replaces exactly its bounded input batch and retains all other notes.
       const selected: MemoryEntry[] = [];
       let characters = 0;
@@ -706,6 +718,7 @@ export const make = Effect.gen(function* () {
           cwd: config.stateDir,
           modelSelection: preferences.modelSelection,
           mode,
+          memoryScope: groupProject === null ? "personal" : standalone ? "chat" : "project",
           sources: evidenceEntries.map((entry) => ({ id: entry.id, text: encodeEntry(entry) })),
         })
         .pipe(Effect.timeout("90 seconds"));
@@ -733,7 +746,7 @@ export const make = Effect.gen(function* () {
               text: redactMemoryText(entry.text),
               keywords: entry.keywords.map(redactMemoryText),
               id: NodeCrypto.randomUUID(),
-              projectId: selected[0]!.projectId,
+              projectId: standalone && entry.scope === "personal" ? null : selected[0]!.projectId,
               sourceIds,
               pinned: false,
               createdAt: evidence.map((source) => source.createdAt).toSorted()[0] ?? completedAt,

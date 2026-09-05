@@ -1,4 +1,5 @@
 import { MemoryError, ProjectId, ThreadId } from "@t3tools/contracts";
+import { isStandaloneProject } from "@t3tools/shared/projectContext";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -168,19 +169,32 @@ export const make = Effect.gen(function* () {
     return `${transcript.slice(0, 40_000)}\n[Middle of long conversation omitted]\n${transcript.slice(-40_000)}`;
   });
 
+  const threadProject = Effect.fn("MemorySourceReader.threadProject")(function* (
+    threadId: ThreadId,
+  ) {
+    const rows =
+      yield* sql`SELECT th.project_id AS projectId, p.title, p.workspace_root AS workspaceRoot
+      FROM projection_threads th
+      JOIN projection_projects p ON p.project_id = th.project_id
+      WHERE th.thread_id = ${threadId} AND th.deleted_at IS NULL AND p.deleted_at IS NULL`.pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(RecommendationProjectRow))),
+        Effect.mapError(failed),
+      );
+    if (!rows[0]) return yield* new MemoryError({ message: "The memory thread no longer exists." });
+    return rows[0];
+  });
+
   const projectForThread = Effect.fn("MemorySourceReader.projectForThread")(function* (
     threadId: ThreadId,
   ) {
-    const rows = yield* sql`SELECT th.project_id AS projectId FROM projection_threads th
-      JOIN projection_projects p ON p.project_id = th.project_id
-      WHERE th.thread_id = ${threadId} AND th.deleted_at IS NULL AND p.deleted_at IS NULL`.pipe(
-      Effect.flatMap(
-        Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ projectId: ProjectId }))),
-      ),
-      Effect.mapError(failed),
-    );
-    if (!rows[0]) return yield* new MemoryError({ message: "The memory thread no longer exists." });
-    return rows[0].projectId;
+    return (yield* threadProject(threadId)).projectId;
+  });
+
+  const memoryScopeForThread = Effect.fn("MemorySourceReader.memoryScopeForThread")(function* (
+    threadId: ThreadId,
+  ) {
+    const project = yield* threadProject(threadId);
+    return isStandaloneProject(project) ? undefined : project.projectId;
   });
 
   const projectForRecommendation = Effect.fn("MemorySourceReader.projectForRecommendation")(
@@ -247,6 +261,7 @@ export const make = Effect.gen(function* () {
     read,
     readConversation,
     projectForThread,
+    memoryScopeForThread,
     projectForRecommendation,
     projectsForRecommendations,
     hasActiveTurns,
