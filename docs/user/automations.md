@@ -6,7 +6,9 @@ Automation management is currently available in the web and desktop apps. Mobile
 
 ## Create an automation
 
-Choose **New automation**, then set:
+Choose **New automation** to describe the task and schedule to an agent. You can start without selecting a project: sending the first message creates a workspace automatically, and the automation uses that workspace. Automation suggestions on a new task work the same way. Selecting a project before starting keeps the automation in that project.
+
+For the form editor, choose **Set up manually** from the creation menu, then set:
 
 - the project and prompt;
 - when it should run, using **Once**, **Every...**, **Every day**, **Weekdays**, or **Every week**;

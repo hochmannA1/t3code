@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
   DEFAULT_MEMORY_SETTINGS,
+  MemoryEntry,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -11,6 +12,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -28,6 +30,7 @@ import * as Sources from "./MemorySourceReader.ts";
 const threadId = ThreadId.make("memory-thread");
 const projectId = ProjectId.make("memory-project");
 const otherProjectId = ProjectId.make("other-memory-project");
+const decodeMemoryEntry = Schema.decodeUnknownEffect(Schema.fromJsonString(MemoryEntry));
 const sourceTime = "1970-01-01T00:00:00.000Z";
 
 const seed = Effect.gen(function* () {
@@ -155,7 +158,7 @@ const dependencies = (settings: Parameters<typeof ServerSettings.layerTest>[0] =
   ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("memory lifecycle", () => {
-  it.effect("scopes and caches memory recommendations without failing the RPC", () =>
+  it.effect("shares and caches global memory recommendations without failing the RPC", () =>
     Effect.gen(function* () {
       const inputs: MemoryRecommendationGenerationInput[] = [];
       let generation = 0;
@@ -206,15 +209,16 @@ describe("memory lifecycle", () => {
 
       assert.equal(first.recommendations[0]?.id, "memory-test-1");
       assert.deepEqual(cached, first);
-      assert.deepEqual(
-        inputs.map((input) => input.memories.map((memory) => memory.title)),
-        [["Personal preference"], ["Personal preference", "Project storage"]],
+      assert.equal(inputs.length, 1);
+      assert.sameMembers(
+        inputs[0]!.memories.map((memory) => memory.title),
+        ["Personal preference", "Project storage", "Unrelated project"],
       );
       assert.isNull(inputs[0]?.project);
-      assert.equal(inputs[1]?.project?.title, "Memory project");
+      assert.equal(inputs[0]?.projects?.length, 2);
       assert.equal(inputs[0]?.modelSelection.instanceId, ProviderInstanceId.make("codex"));
       assert.equal(inputs[0]?.modelSelection.model, "gpt-5.4");
-      assert.deepEqual(missing, { recommendations: [], retryable: false });
+      assert.deepEqual(missing, first);
     }).pipe(
       Effect.provide(
         dependencies({
@@ -266,7 +270,7 @@ describe("memory lifecycle", () => {
     }).pipe(Effect.provide(dependencies())),
   );
 
-  it.effect("purges only recommendation scopes affected by update and forget", () =>
+  it.effect("purges global recommendations after any update or forget", () =>
     Effect.gen(function* () {
       const { service, store } = yield* setup(
         (input) => Effect.succeed(resultFor(input)),
@@ -316,14 +320,14 @@ describe("memory lifecycle", () => {
       });
       assert.sameMembers(
         Object.values((yield* store.read()).recommendationCache).map((entry) => entry.projectId),
-        [null, otherProjectId],
+        [],
       );
 
       yield* service.getRecommendations({ projectId });
       yield* service.forget({ id: firstProject.id });
       assert.sameMembers(
         Object.values((yield* store.read()).recommendationCache).map((entry) => entry.projectId),
-        [null, otherProjectId],
+        [],
       );
 
       yield* service.forget({ id: personal.id });
@@ -772,6 +776,52 @@ describe("memory lifecycle", () => {
     }).pipe(Effect.provide(dependencies())),
   );
 
+  it.effect("consolidates new evidence with related older notes without refreshing their age", () =>
+    Effect.gen(function* () {
+      const inputs: MemoryGenerationInput[] = [];
+      const { service, store } = yield* setup((input) => {
+        inputs.push(input);
+        return Effect.succeed(resultFor(input));
+      });
+      yield* TestClock.adjust("10 minutes");
+      yield* service.tick();
+      const extracted = (yield* service.getState({ threadId })).entries[0]!;
+      assert.equal(extracted.updatedAt, sourceTime);
+      const legacy = yield* store.writeEntry({
+        ...extracted,
+        createdAt: "1970-01-01T00:10:00.000Z",
+        updatedAt: "1970-01-01T00:10:00.000Z",
+      });
+      yield* store.update((current) =>
+        Effect.succeed({
+          manifest: { ...current, entries: [legacy] },
+          result: undefined,
+        }),
+      );
+      yield* TestClock.adjust("24 hours");
+      yield* service.tick();
+      yield* service.tick();
+      const consolidated = (yield* service.getState({ threadId })).entries[0]!;
+      assert.equal(consolidated.updatedAt, extracted.updatedAt);
+      assert.equal(consolidated.createdAt, extracted.createdAt);
+      const reviewInput = inputs.find((input) => input.mode === "consolidate")!.sources[0]!;
+      const reviewed = yield* decodeMemoryEntry(reviewInput.text);
+      assert.equal(reviewed.updatedAt, sourceTime);
+      assert.equal(reviewed.createdAt, sourceTime);
+      yield* insertCompletedTurns(threadId, 1);
+      yield* service.tick();
+      yield* TestClock.adjust("24 hours");
+      yield* service.tick();
+      const daily = inputs.filter((input) => input.mode === "consolidate");
+      assert.equal(daily.length, 2);
+      assert.equal(daily[1]!.sources.length, 2);
+      assert.isTrue(daily[1]!.sources.some((source) => source.id === consolidated.id));
+      assert.equal((yield* service.getState({ threadId })).entries.length, 1);
+      yield* service.tick();
+      assert.equal(inputs.filter((input) => input.mode === "consolidate").length, 2);
+    }).pipe(Effect.provide(dependencies())),
+  );
+
   it.effect("finishes daily batches instead of marking an oversized scope complete early", () =>
     Effect.gen(function* () {
       const consolidationInputs: MemoryGenerationInput[] = [];
@@ -794,15 +844,23 @@ describe("memory lifecycle", () => {
       yield* service.tick();
       yield* TestClock.adjust("24 hours");
       yield* service.tick();
-      assert.equal(consolidationInputs[0]?.sources.length, 32);
-      assert.equal((yield* service.getState({ threadId })).entries.length, 33);
+      assert.equal(consolidationInputs[0]?.sources.length, 24);
+      const firstBatchState = yield* service.getState({ threadId });
+      assert.equal(firstBatchState.entries.length, 41);
+      const older = firstBatchState.entries.find(
+        (entry) => entry.title === "Consolidated storage decision",
+      )!;
       yield* service.tick();
-      assert.equal(consolidationInputs[1]?.sources.length, 32);
+      assert.equal(consolidationInputs[1]?.sources.length, 24);
+      assert.isTrue(consolidationInputs[1]!.sources.some((source) => source.id === older.id));
       const firstIds = new Set(consolidationInputs[0]!.sources.map((source) => source.id));
       assert.isTrue(consolidationInputs[1]!.sources.every((source) => !firstIds.has(source.id)));
-      assert.equal((yield* service.getState({ threadId })).entries.length, 2);
+      assert.equal((yield* service.getState({ threadId })).entries.length, 18);
       yield* service.tick();
-      assert.equal(consolidationInputs.length, 2);
+      assert.equal(consolidationInputs[2]?.sources.length, 18);
+      assert.equal((yield* service.getState({ threadId })).entries.length, 1);
+      yield* service.tick();
+      assert.equal(consolidationInputs.length, 3);
     }).pipe(Effect.provide(dependencies())),
   );
 

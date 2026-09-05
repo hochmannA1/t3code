@@ -1,5 +1,5 @@
 export const AUTOMATION_CHAT_STARTER_PROMPT =
-  "Help me create an automation for this project. Ask what it should do and when it should run. Keep the setup simple, suggest sensible defaults, and create it once I confirm.";
+  "Help me create an automation. Ask what it should do and when it should run. Keep the setup simple, suggest sensible defaults, and create it once I confirm.";
 
 export function automationNameFromPrompt(prompt: string): string {
   const firstLine = prompt

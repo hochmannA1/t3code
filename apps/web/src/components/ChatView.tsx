@@ -291,11 +291,7 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
-import {
-  DraftRecommendations,
-  recommendationProjectIdForDraft,
-  type DraftRecommendation,
-} from "./chat/DraftRecommendations";
+import { DraftRecommendations, type DraftRecommendation } from "./chat/DraftRecommendations";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -2898,22 +2894,17 @@ function ChatViewContent(props: ChatViewProps) {
     draftHeroDockRequested,
     backgroundSubmissionPending,
   });
-  const draftRecommendationProjectId = recommendationProjectIdForDraft(
-    isStandaloneDraft,
-    activeProject?.id,
-  );
   const showDraftRecommendations =
     routeKind === "draft" &&
     appExperience === "work" &&
     isDraftHeroState &&
     !composerHasUnsentContent &&
-    draftRecommendationProjectId !== undefined &&
     serverConfig?.environment.capabilities.memoryRecommendations === true;
   const draftRecommendationsQuery = useEnvironmentQuery(
-    showDraftRecommendations && draftRecommendationProjectId !== undefined
+    showDraftRecommendations
       ? serverEnvironment.memoryGetRecommendations({
           environmentId,
-          input: { projectId: draftRecommendationProjectId },
+          input: { projectId: null },
         })
       : null,
   );
@@ -7780,6 +7771,7 @@ function ChatViewContent(props: ChatViewProps) {
                       <DraftRecommendations
                         recommendations={draftRecommendationsQuery.data?.recommendations ?? []}
                         isPending={draftRecommendationsQuery.isPending}
+                        reason={draftRecommendationsQuery.data?.reason}
                         retryable={draftRecommendationsQuery.data?.retryable ?? false}
                         error={draftRecommendationsQuery.error}
                         onSelect={selectDraftRecommendation}

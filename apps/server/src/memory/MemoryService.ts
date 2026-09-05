@@ -20,10 +20,14 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
-import { MEMORY_RECOMMENDATION_GENERATION_VERSION } from "../textGeneration/MemoryRecommendationGeneration.ts";
+import {
+  MEMORY_RECOMMENDATION_GENERATION_VERSION,
+  selectRecommendationMemories,
+} from "../textGeneration/MemoryRecommendationGeneration.ts";
 import { buildMemoryContext } from "./MemoryContext.ts";
 import { redactMemoryText } from "./redactMemoryText.ts";
 import { MemorySourceReader, sourceId, sourceRevision, sourceText } from "./MemorySourceReader.ts";
@@ -42,11 +46,20 @@ const MAX_MAINTENANCE_ENTRIES = 24;
 const MAX_SOURCE_ATTEMPTS = 5;
 const DAILY_CONSOLIDATION_MS = 24 * 60 * 60_000;
 const WEEKLY_DREAM_MS = 7 * DAILY_CONSOLIDATION_MS;
-export const MEMORY_RECOMMENDATION_WARM_PROJECT_LIMIT = 6;
-export const MEMORY_RECOMMENDATION_WARM_CONCURRENCY = 2;
 const iso = (time: number) => DateTime.formatIso(DateTime.makeUnsafe(time));
 const encodeEntry = Schema.encodeSync(Schema.fromJsonString(MemoryEntry));
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
+const encodeRecommendationProjects = Schema.encodeSync(
+  Schema.fromJsonString(
+    Schema.Array(
+      Schema.Struct({
+        projectId: Schema.String,
+        title: Schema.String,
+        workspaceRoot: Schema.String,
+      }),
+    ),
+  ),
+);
 const scopeKey = (projectId: ProjectId | null) => projectId ?? "__personal__";
 const digestEntries = (entries: ReadonlyArray<MemoryEntry>) =>
   fingerprint(
@@ -69,6 +82,7 @@ const messageFrom = (error: unknown) => {
 };
 
 export const make = Effect.gen(function* () {
+  const serviceScope = yield* Scope.Scope;
   const store = yield* MemoryStore;
   const reader = yield* MemorySourceReader;
   const settings = yield* ServerSettingsService;
@@ -106,41 +120,55 @@ export const make = Effect.gen(function* () {
   });
 
   const getRecommendations = Effect.fn("MemoryService.getRecommendations")(
-    function* (input: MemoryGetRecommendationsInput) {
-      const fallback = {
+    function* (_input: MemoryGetRecommendationsInput) {
+      const fallback: MemoryGetRecommendationsResult = {
         recommendations: [],
         retryable: false,
-      } satisfies MemoryGetRecommendationsResult;
-      const retryableFailure = {
+      };
+      const retryableFailure: MemoryGetRecommendationsResult = {
         recommendations: [],
         retryable: true,
-      } satisfies MemoryGetRecommendationsResult;
+      };
       const preferences = yield* settings.getSettings;
-      if (!preferences.memory.enabled || !preferences.memory.useMemories) return fallback;
-      const project = input.projectId
-        ? yield* reader.projectForRecommendation(input.projectId)
-        : null;
-      if (input.projectId !== null && project === undefined) return fallback;
+      if (!preferences.memory.enabled || !preferences.memory.useMemories) {
+        return { ...fallback, reason: "disabled" as const };
+      }
 
       const manifest = yield* store.read();
-      const metadata = manifest.entries.filter(
-        (entry) => entry.projectId === null || entry.projectId === input.projectId,
+      if (manifest.entries.length === 0) return { ...fallback, reason: "no-memories" as const };
+      const projectIds = [
+        ...new Set(
+          manifest.entries.flatMap((entry) => (entry.projectId === null ? [] : [entry.projectId])),
+        ),
+      ];
+      const projects = yield* reader.projectsForRecommendations(projectIds, projectIds.length);
+      const availableProjects = new Set(projects.map((project) => project.projectId));
+      const entries = manifest.entries.filter(
+        (entry) => entry.projectId === null || availableProjects.has(entry.projectId),
       );
-      if (metadata.length === 0) return fallback;
-      const memoryDigest = recommendationMemoryDigest(manifest.entries, input.projectId);
-      const projectIdentity = project
-        ? fingerprint(`${project.projectId}\0${project.title}\0${project.workspaceRoot}`)
-        : "__personal__";
+      const validSources = yield* reader.validSourceIds(Object.values(manifest.sources));
+      const eligibleEntries = entries.filter(
+        (entry) =>
+          entry.sourceIds.length === 0 || entry.sourceIds.some((id) => validSources.has(id)),
+      );
+      if (eligibleEntries.length === 0) return { ...fallback, reason: "no-memories" as const };
+      const memoryDigest = recommendationMemoryDigest(manifest.entries, null);
+      const projectIdentity = fingerprint(
+        encodeRecommendationProjects(
+          projects.toSorted((left, right) => left.projectId.localeCompare(right.projectId)),
+        ),
+      );
       const freshnessKey = fingerprint(
         [
           MEMORY_RECOMMENDATION_GENERATION_VERSION,
           memoryDigest,
+          recommendationMemoryDigest(eligibleEntries, null),
           projectIdentity,
           encodeModelSelection(preferences.textGenerationModelSelection),
         ].join("\0"),
       );
       const cached = manifest.recommendationCache[freshnessKey];
-      if (cached?.projectId === input.projectId) return cached.result;
+      if (cached?.projectId === null) return cached.result;
 
       const deferred = yield* Effect.uninterruptible(
         Effect.gen(function* () {
@@ -149,19 +177,22 @@ export const make = Effect.gen(function* () {
           const created = Deferred.makeUnsafe<MemoryGetRecommendationsResult>();
           recommendationFlights.set(freshnessKey, created);
           yield* Effect.gen(function* () {
-            const memories = yield* scopedEntries(manifest, input.projectId);
+            const memories = yield* store.loadEntries(
+              selectRecommendationMemories(eligibleEntries),
+            );
             if (memories.length === 0) return fallback;
             const result = yield* generation
               .generateMemoryRecommendations({
                 cwd: config.stateDir,
                 modelSelection: preferences.textGenerationModelSelection,
-                project: project ? { title: project.title } : null,
+                project: null,
+                projects,
                 memories,
               })
               .pipe(Effect.timeout("90 seconds"));
             if (!result.retryable) {
               yield* store
-                .cacheRecommendations(freshnessKey, input.projectId, memoryDigest, result)
+                .cacheRecommendations(freshnessKey, null, memoryDigest, result)
                 .pipe(
                   Effect.catch(() =>
                     Effect.logWarning("Memory recommendations could not be cached"),
@@ -180,35 +211,23 @@ export const make = Effect.gen(function* () {
                 Effect.andThen(Deferred.done(created, exit)),
               ),
             ),
-            Effect.forkDetach,
+            Effect.forkIn(serviceScope),
           );
           return created;
         }),
       );
       return yield* Deferred.await(deferred);
     },
-    Effect.orElseSucceed(() => ({ recommendations: [], retryable: true })),
+    Effect.orElseSucceed(
+      (): MemoryGetRecommendationsResult => ({ recommendations: [], retryable: true }),
+    ),
   );
 
   const warmRecommendations = Effect.fn("MemoryService.warmRecommendations")(function* () {
     yield* Effect.gen(function* () {
       const preferences = yield* settings.getSettings;
       if (!preferences.memory.enabled || !preferences.memory.useMemories) return;
-      const manifest = yield* store.read();
-      const projectIds = [
-        ...new Set(
-          manifest.entries.flatMap((entry) => (entry.projectId === null ? [] : [entry.projectId])),
-        ),
-      ];
-      const projects = yield* reader.projectsForRecommendations(
-        projectIds,
-        MEMORY_RECOMMENDATION_WARM_PROJECT_LIMIT,
-      );
-      yield* Effect.forEach(
-        [null, ...projects.map((project) => project.projectId)],
-        (projectId) => getRecommendations({ projectId }),
-        { concurrency: MEMORY_RECOMMENDATION_WARM_CONCURRENCY, discard: true },
-      );
+      yield* getRecommendations({ projectId: null });
     }).pipe(Effect.catch(() => Effect.logWarning("Memory recommendations could not be warmed")));
   });
 
@@ -543,8 +562,8 @@ export const make = Effect.gen(function* () {
             projectId: entry.scope === "personal" ? null : source.projectId,
             sourceIds: [source.id],
             pinned: false,
-            createdAt: timestamp,
-            updatedAt: timestamp,
+            createdAt: row.at,
+            updatedAt: row.at,
           }),
         );
         return {
@@ -623,13 +642,26 @@ export const make = Effect.gen(function* () {
       let characters = 0;
       const unprocessed = (entry: MemoryEntry) =>
         progress[`entry:${entry.id}`] !== fingerprint(encodeEntry(entry));
-      const ordered = group.toSorted((a, b) => Number(unprocessed(b)) - Number(unprocessed(a)));
-      for (const entry of ordered) {
-        if (!unprocessed(entry)) continue;
-        const length = encodeEntry(entry).length;
-        if (selected.length >= 32 || characters + length > 80_000) break;
-        selected.push(entry);
-        characters += length;
+      const seed = group.find(unprocessed);
+      if (seed) {
+        const topics = new Set(seed.keywords.map((word) => word.toLowerCase()));
+        const related = (entry: MemoryEntry) =>
+          entry.title.toLowerCase() === seed.title.toLowerCase() ||
+          entry.keywords.some((word) => topics.has(word.toLowerCase()));
+        // Seed with new evidence, then reserve room for related previously processed notes
+        // before filling the batch with the remaining backlog.
+        const priority = (entry: MemoryEntry) =>
+          entry.id === seed.id ? 0 : related(entry) ? (unprocessed(entry) ? 2 : 1) : 3;
+        const ordered = group
+          .filter((entry) => unprocessed(entry) || related(entry))
+          .toSorted((a, b) => priority(a) - priority(b));
+        for (const entry of ordered) {
+          const length = encodeEntry(entry).length;
+          if (selected.length >= MAX_MAINTENANCE_ENTRIES) break;
+          if (characters + length > 80_000) continue;
+          selected.push(entry);
+          characters += length;
+        }
       }
       if (selected.length === 0) {
         const otherPending = [...groups].some(
@@ -657,12 +689,24 @@ export const make = Effect.gen(function* () {
         );
         return !otherPending;
       }
+      // Older versions dated notes at extraction/review time. Recover evidence dates
+      // from source metadata before presenting them to the next review.
+      const evidenceEntries = selected.map((entry) => {
+        const dates = entry.sourceIds
+          .map((id) => current.sources[id]?.at ?? entry.updatedAt)
+          .toSorted();
+        return {
+          ...entry,
+          createdAt: dates[0] ?? entry.createdAt,
+          updatedAt: dates.at(-1) ?? entry.updatedAt,
+        };
+      });
       const generated = yield* generation
         .generateMemory({
           cwd: config.stateDir,
           modelSelection: preferences.modelSelection,
           mode,
-          sources: selected.map((entry) => ({ id: entry.id, text: encodeEntry(entry) })),
+          sources: evidenceEntries.map((entry) => ({ id: entry.id, text: encodeEntry(entry) })),
         })
         .pipe(Effect.timeout("90 seconds"));
       if (generated.entries.length > MAX_MAINTENANCE_ENTRIES)
@@ -679,13 +723,10 @@ export const make = Effect.gen(function* () {
             return { manifest: latest, result: undefined };
           const retained = latest.entries.filter((entry) => !selectedIds.has(entry.id));
           const additions = yield* Effect.forEach(generated.entries, (entry) => {
-            const sourceIds = [
-              ...new Set(
-                entry.sourceIds.flatMap(
-                  (id) => selected.find((source) => source.id === id)?.sourceIds ?? [],
-                ),
-              ),
-            ];
+            const evidence = evidenceEntries.filter((source) =>
+              entry.sourceIds.includes(source.id),
+            );
+            const sourceIds = [...new Set(evidence.flatMap((source) => source.sourceIds))];
             return store.writeEntry({
               ...entry,
               title: redactMemoryText(entry.title),
@@ -695,8 +736,12 @@ export const make = Effect.gen(function* () {
               projectId: selected[0]!.projectId,
               sourceIds,
               pinned: false,
-              createdAt: completedAt,
-              updatedAt: completedAt,
+              createdAt: evidence.map((source) => source.createdAt).toSorted()[0] ?? completedAt,
+              updatedAt:
+                evidence
+                  .map((source) => source.updatedAt)
+                  .toSorted()
+                  .at(-1) ?? completedAt,
             });
           });
           const after = yield* store.loadEntries(

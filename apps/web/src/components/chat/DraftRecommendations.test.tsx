@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  recommendationProjectIdForDraft,
   recommendationsForDraft,
   shouldShowDraftRecommendationRetry,
   type DraftRecommendation,
 } from "./DraftRecommendations";
-import { ProjectId } from "@t3tools/contracts";
 
 const recommendations: ReadonlyArray<DraftRecommendation> = [
   {
@@ -40,19 +38,6 @@ describe("recommendationsForDraft", () => {
     recommendationsForDraft(recommendations);
 
     expect(recommendations).toEqual(snapshot);
-  });
-});
-
-describe("recommendationProjectIdForDraft", () => {
-  const projectId = ProjectId.make("project-1");
-
-  it("uses null for projectless drafts even if the prior project is still in memory", () => {
-    expect(recommendationProjectIdForDraft(true, projectId)).toBeNull();
-  });
-
-  it("waits for a project draft to resolve its active project", () => {
-    expect(recommendationProjectIdForDraft(false, undefined)).toBeUndefined();
-    expect(recommendationProjectIdForDraft(false, projectId)).toBe(projectId);
   });
 });
 

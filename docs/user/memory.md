@@ -12,13 +12,16 @@ Codex, Claude, and OpenCode support background memory generation. Cursor and Gro
 
 ## Suggestions for a new task
 
-In Work, an empty new-task composer can show up to two suggestions based on memory. A project task uses personal memory and memory for that project. A projectless task uses personal memory only.
+In Work, an empty new-task composer can show up to two suggestions based on memory. Suggestions draw on your personal memory and all projects in the connected environment, including projectless work. The same suggestions are available regardless of which project is selected.
 
 Suggestions can start a task, propose an automation, or ask the agent to create a page. The icon beside each suggestion identifies its type. Selecting one copies its starting message into the composer so you can review or edit it. Nothing runs, creates an automation, or publishes a page until you send the message and complete any confirmation the agent requests.
 
-T3 generates these suggestions with the **Text generation model** in General settings. Its default is **Codex · gpt-5.6-luna**. This is separate from the memory model used for extraction, consolidation, and dreaming. Codex, Claude, and OpenCode can generate recommendations; selecting Cursor or Grok offers a retry instead. T3 stores generated suggestions locally so they are ready after a restart, and prepares suggestions for personal memory and recently active projects in the background. It generates a new set when the relevant memory, project, model, or suggestion format changes. T3 can also return no suggestions when the available memory does not support a useful next action.
+T3 generates these suggestions with the **Text generation model** in General settings. Its default is **Codex · gpt-5.6-luna**. This is separate from the memory model used for extraction, consolidation, and dreaming. Codex, Claude, and OpenCode can generate recommendations; selecting Cursor or Grok offers a retry instead. T3 stores generated suggestions locally so they are ready after a restart, and prepares one shared set of suggestions in the background. It generates a new set when memory, available projects, the model, or the suggestion format changes. T3 can also return no suggestions when the available memory does not support a useful next action. While loading, the composer shows a status; if memories are still being collected, use Refresh after they become available.
 
 ## Reading and learning
+
+Suggestions prepare in the background while you work. Opening a task does not wait
+for suggestion generation, and switching projects reuses the same suggestions.
 
 **Use memories** controls whether T3 supplies remembered context and memory tools to agents. **Learn from conversations** controls automatic extraction. Each conversation also has separate use and learning controls in the Memory settings section.
 
@@ -34,7 +37,7 @@ The idle setting delays processing until conversations have settled and the envi
 
 ## Consolidation and dreaming
 
-Daily consolidation merges duplicate or directly related memories and retains supported corrections and uncertainty. A deeper weekly dream revisits every eligible learned scope to synthesize durable patterns and remove obsolete claims. Both work on bounded batches and leave pinned memories alone. They do not perform repository tasks or publish information to other users.
+Daily consolidation merges duplicate or directly related memories and retains supported corrections and uncertainty. A deeper weekly dream revisits every eligible learned scope to synthesize durable patterns and remove obsolete claims. Both work on bounded batches and leave pinned memories alone. Daily review can compare new evidence with related older notes. Review does not make an old fact freshly verified: evidence dates are retained, and age alone is not a reason to discard a supported fact. They do not perform repository tasks or publish information to other users.
 
 Use **Run maintenance now** to queue both passes, including when automatic maintenance is paused. It still waits for interactive work to settle. Settings distinguish the first historical review from its current persisted queue, and show whether maintenance is running, the latest daily consolidation or weekly dream, and errors. Unchanged memory does not cause repeated model calls.
 
@@ -47,3 +50,9 @@ The Memory section lists entries, their scope, and source links. You can add or 
 Forgetting a learned entry also removes other entries derived from the same source turns and suppresses those turns from future extraction. This prevents dreaming from recreating the forgotten information. Removing a source conversation or rewinding away a source turn removes that citation; memory with no remaining source is removed, while a multi-source memory remains supported by its other conversations. Turning off memory stops future recall and processing; it does not erase saved entries or context already sent to a provider.
 
 The displayed memory directory contains a generated `MEMORY.md` index, `memory_summary.md`, and individual Markdown notes. Use Settings or the memory tools for edits so processing metadata and content stay consistent. Missing or modified note files cause an error instead of being silently replaced by automatic processing.
+
+## Recall budget and quality
+
+The default **2,000 context tokens** is an approximate limit on memory added to each conversation turn (8,000 characters). It includes reading guidance and a small selection of entries or index records. It does not limit the model context used to learn or review memories. Agents can search and read relevant entries for more detail, so raising the budget is usually less useful than keeping entries precise and grounded.
+
+Personal memory can include established preferences and confirmed workflows useful across projects. Repository-specific facts and procedures remain with their project. Learning aims to keep lasting decisions and lessons rather than incident counts, sprint progress, or proposed actions. Review entries and their source conversations when judging quality: automated synthesis can still omit useful details or retain a weak claim.

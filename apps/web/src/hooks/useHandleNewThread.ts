@@ -4,7 +4,12 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type EnvironmentId,
+  type ScopedProjectRef,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -76,6 +81,7 @@ export function useNewThreadHandler() {
     async (
       projectRef: ScopedProjectRef | null,
       options?: {
+        environmentId?: EnvironmentId;
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
@@ -136,12 +142,13 @@ export function useNewThreadHandler() {
       // A projectless draft carries only an environment until its first
       // message allocates a standalone project on that environment.
       if (projectRef === null) {
-        if (primaryEnvironmentId === null) {
+        const targetEnvironmentId = options?.environmentId ?? primaryEnvironmentId;
+        if (targetEnvironmentId === null) {
           return null;
         }
         const draftId = newDraftId();
         const threadId = newThreadId();
-        const placeholderProjectRef = scopeProjectRef(primaryEnvironmentId, newProjectId());
+        const placeholderProjectRef = scopeProjectRef(targetEnvironmentId, newProjectId());
         setLogicalProjectDraftThreadId(
           `standalone-draft:${draftId}`,
           placeholderProjectRef,

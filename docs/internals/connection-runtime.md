@@ -121,6 +121,18 @@ Finite requests, durable subscriptions, and commands are separate APIs:
 The Promise bridge exists only at the React/Atom boundary. Runtime and business
 logic remain Effect-native.
 
+Web task routes render cached details and local drafts before shell synchronization
+finishes. Absence from the shell is not proof of deletion: archived tasks are omitted
+from its index. A route waits for detail loading, reports an actual detail error, or
+handles an explicit deletion event. The Work landing page needs only its primary
+environment identity to prepare a projectless draft; unrelated environments do not
+hold it up.
+
+Both web sidebars prewarm details for at most five visible tasks using the same
+shared thread atoms as the task view. Work also prefetches the active environment's
+shared recommendation query before opening a new draft. These subscriptions run
+independently of route rendering and reuse the normal caches.
+
 ## Platform Layers
 
 Web and mobile provide:

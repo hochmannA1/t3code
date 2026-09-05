@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
-import { useProjects } from "../state/entities";
+import { useActiveEnvironmentId, useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
@@ -20,7 +20,12 @@ import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { primaryServerKeybindingsAtom } from "~/state/server";
+import {
+  environmentServerConfigsAtom,
+  primaryServerKeybindingsAtom,
+  serverEnvironment,
+} from "~/state/server";
+import { useEnvironmentQuery } from "../state/query";
 import { useUiStateStore } from "~/uiStateStore";
 
 function ChatRouteGlobalShortcuts() {
@@ -185,10 +190,27 @@ function ChatRouteGlobalShortcuts() {
   return null;
 }
 
+function DraftRecommendationPrewarmer() {
+  const activeEnvironmentId = useActiveEnvironmentId();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const environmentId = activeEnvironmentId ?? primaryEnvironmentId;
+  const configs = useAtomValue(environmentServerConfigsAtom);
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  useEnvironmentQuery(
+    appExperience === "work" &&
+      environmentId !== null &&
+      configs.get(environmentId)?.environment.capabilities.memoryRecommendations === true
+      ? serverEnvironment.memoryGetRecommendations({ environmentId, input: { projectId: null } })
+      : null,
+  );
+  return null;
+}
+
 function ChatRouteLayout() {
   return (
     <>
       <ChatRouteGlobalShortcuts />
+      <DraftRecommendationPrewarmer />
       <Outlet />
     </>
   );

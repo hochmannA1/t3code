@@ -21,6 +21,7 @@ const SourceRow = Schema.Struct({
 });
 const ConversationRow = Schema.Struct({
   turnId: Schema.String,
+  observedAt: Schema.String,
   outcome: Schema.String,
   userText: Schema.String,
   assistantText: Schema.String,
@@ -35,6 +36,7 @@ const encodeConversationEvidence = Schema.encodeSync(
     Schema.Array(
       Schema.Struct({
         turnId: Schema.String,
+        observedAt: Schema.String,
         outcome: Schema.String,
         user: Schema.String,
         assistant: Schema.String,
@@ -139,6 +141,7 @@ export const make = Effect.gen(function* () {
   ) {
     const rows = yield* sql`SELECT
       t.turn_id AS turnId,
+      MAX(t.completed_at, u.updated_at, a.updated_at) AS observedAt,
       t.state AS outcome,
       CASE WHEN LENGTH(u.text) <= 16000 THEN u.text ELSE SUBSTR(u.text, 1, 8000) || '\n[Middle of long message omitted]\n' || SUBSTR(u.text, -8000) END AS userText,
       CASE WHEN LENGTH(a.text) <= 16000 THEN a.text ELSE SUBSTR(a.text, 1, 8000) || '\n[Middle of long message omitted]\n' || SUBSTR(a.text, -8000) END AS assistantText
@@ -155,6 +158,7 @@ export const make = Effect.gen(function* () {
     const transcript = encodeConversationEvidence(
       rows.map((row) => ({
         turnId: row.turnId,
+        observedAt: row.observedAt,
         outcome: row.outcome,
         user: redactMemoryText(row.userText),
         assistant: redactMemoryText(row.assistantText),
@@ -255,6 +259,7 @@ export const sourceId = (source: Pick<MemorySourceRow, "threadId" | "turnId">) =
   `${source.threadId}/${source.turnId}`;
 export const sourceText = (row: MemorySourceRow) =>
   JSON.stringify({
+    observedAt: row.at,
     outcome: row.outcome,
     user: redactMemoryText(row.userText),
     assistant: redactMemoryText(row.assistantText),

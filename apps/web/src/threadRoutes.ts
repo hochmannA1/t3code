@@ -18,25 +18,25 @@ type DraftThreadRouteState = {
   promotedTo?: ScopedThreadRef | null;
 };
 
-export type ThreadRouteRenderState = "loading" | "ready" | "missing";
+export type ThreadRouteRenderState = "loading" | "ready" | "missing" | "error";
 
 export function resolveThreadRouteRenderState(input: {
-  bootstrapComplete: boolean;
   serverThreadShellExists: boolean;
   serverThreadDetailExists: boolean;
   serverThreadDetailDeleted: boolean;
+  serverThreadDetailError: boolean;
   draftThreadExists: boolean;
 }): ThreadRouteRenderState {
-  if (!input.bootstrapComplete) {
-    return "loading";
-  }
-  if (input.serverThreadDetailExists || input.draftThreadExists) {
+  if (input.draftThreadExists) {
     return "ready";
   }
   if (input.serverThreadDetailDeleted) {
     return "missing";
   }
-  return input.serverThreadShellExists ? "loading" : "missing";
+  if (input.serverThreadDetailExists) {
+    return "ready";
+  }
+  return input.serverThreadDetailError && !input.serverThreadShellExists ? "error" : "loading";
 }
 
 export function buildThreadRouteParams(ref: ScopedThreadRef): {

@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import * as Option from "effect/Option";
 
 import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
@@ -13,22 +14,23 @@ import {
   useThreadShell,
   useThreadStatus,
 } from "../state/entities";
-import { useEnvironmentQuery } from "../state/query";
-import { environmentShell } from "../state/shell";
+import { useEnvironmentThread } from "../state/threads";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
   const threadRef = Route.useParams({
     select: (params) => resolveThreadRouteRef(params),
   });
-  const shell = useEnvironmentQuery(
-    threadRef === null ? null : environmentShell.stateAtom(threadRef.environmentId),
+  const detailState = useEnvironmentThread(
+    threadRef?.environmentId ?? null,
+    threadRef?.threadId ?? null,
   );
+  const detailError = Option.getOrNull(detailState.error);
   const serverThreadShell = useThreadShell(threadRef);
   const serverThreadDetail = useThreadDetail(threadRef);
   const serverThreadStatus = useThreadStatus(threadRef);
   const environmentThreadRefs = useEnvironmentThreadRefs(threadRef?.environmentId ?? null);
-  const bootstrapComplete = shell.data?.snapshot._tag === "Some";
   const environmentHasServerThreads = environmentThreadRefs.length > 0;
   const draftThreadExists = useComposerDraftStore((store) =>
     threadRef ? store.getDraftThreadByRef(threadRef) !== null : false,
@@ -43,10 +45,10 @@ function ChatThreadRouteView() {
     return store.hasDraftThreadsInEnvironment(threadRef.environmentId);
   });
   const renderState = resolveThreadRouteRenderState({
-    bootstrapComplete,
     serverThreadShellExists: serverThreadShell !== null,
     serverThreadDetailExists: serverThreadDetail !== null,
     serverThreadDetailDeleted: serverThreadStatus === "deleted",
+    serverThreadDetailError: detailError !== null,
     draftThreadExists,
   });
   const threadSyncPhase = resolveThreadSyncPhase({
@@ -58,14 +60,14 @@ function ChatThreadRouteView() {
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
 
   useEffect(() => {
-    if (!threadRef || !bootstrapComplete) {
+    if (!threadRef) {
       return;
     }
 
     if (renderState === "missing" && environmentHasAnyThreads) {
       void navigate({ to: "/", replace: true });
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, threadRef]);
+  }, [environmentHasAnyThreads, navigate, renderState, threadRef]);
 
   useEffect(() => {
     if (!threadRef || !serverThreadStarted || !draftThread) {
@@ -87,7 +89,20 @@ function ChatThreadRouteView() {
           routeKind="server"
           threadSyncPhase={threadSyncPhase}
         />
-      ) : null}
+      ) : (
+        <Empty className="flex-1" role={renderState === "error" ? "alert" : "status"}>
+          <EmptyHeader>
+            <EmptyTitle>
+              {renderState === "error"
+                ? "Couldn’t load this task"
+                : renderState === "missing"
+                  ? "This task was deleted"
+                  : "Loading task..."}
+            </EmptyTitle>
+            {renderState === "error" ? <EmptyDescription>{detailError}</EmptyDescription> : null}
+          </EmptyHeader>
+        </Empty>
+      )}
     </SidebarInset>
   );
 }

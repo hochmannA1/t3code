@@ -15,7 +15,7 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useUiStateStore } from "~/uiStateStore";
@@ -32,9 +32,8 @@ function ChatIndexRouteView() {
 }
 
 /**
- * Landing on the index route drops straight into a draft thread for the most
- * recently active project, so the first screen is a prompt instead of a dead
- * end. Falls back to an add-project hero when no project exists yet.
+ * Work opens a projectless draft as soon as its environment is known. Code
+ * waits for project discovery to select the most recently active project.
  */
 function IndexDraftLanding() {
   const projects = useProjects();
@@ -42,23 +41,21 @@ function IndexDraftLanding() {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
   const appExperience = useUiStateStore((store) => store.appExperience);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const ready = appExperience === "work" ? primaryEnvironmentId !== null : bootstrapped;
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
   const mostRecentProject = useMemo(
     () =>
-      bootstrapped
+      appExperience === "code" && bootstrapped
         ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
         : null,
-    [bootstrapped, projects, threads],
+    [appExperience, bootstrapped, projects, threads],
   );
 
   useEffect(() => {
-    if (
-      !bootstrapped ||
-      (appExperience === "code" && mostRecentProject === null) ||
-      startingRef.current
-    ) {
+    if (!ready || (appExperience === "code" && mostRecentProject === null) || startingRef.current) {
       return;
     }
     startingRef.current = true;
@@ -76,9 +73,9 @@ function IndexDraftLanding() {
         startingRef.current = false;
         setStartState((state) => ({ ...state, failed: true }));
       });
-  }, [appExperience, bootstrapped, handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [appExperience, ready, handleNewThread, mostRecentProject, startState.retryRequest]);
 
-  if (!bootstrapped) {
+  if (!ready) {
     return null;
   }
   if (appExperience === "work" || mostRecentProject !== null) {

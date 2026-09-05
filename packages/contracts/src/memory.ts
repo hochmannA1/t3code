@@ -72,6 +72,7 @@ export const MemoryGetRecommendationsInput = Schema.Struct({
 export type MemoryGetRecommendationsInput = typeof MemoryGetRecommendationsInput.Type;
 export const MemoryGetRecommendationsResult = Schema.Struct({
   recommendations: Schema.Array(MemoryRecommendation).check(Schema.isMaxLength(2)),
+  reason: Schema.optional(Schema.Literals(["disabled", "no-memories", "no-suggestions"])),
   retryable: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type MemoryGetRecommendationsResult = typeof MemoryGetRecommendationsResult.Type;

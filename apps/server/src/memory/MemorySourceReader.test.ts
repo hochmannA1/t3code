@@ -1,12 +1,18 @@
 import { assert, describe, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../persistence/Migrations.ts";
 import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
-import { make, sourceId, sourceRevision } from "./MemorySourceReader.ts";
+import { make, sourceId, sourceRevision, sourceText } from "./MemorySourceReader.ts";
 
+const EvidenceDate = Schema.Struct({ observedAt: Schema.String });
+const decodeEvidenceDate = Schema.decodeUnknownEffect(Schema.fromJsonString(EvidenceDate));
+const decodeConversationDates = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Array(EvidenceDate)),
+);
 const at = "2026-09-04T10:00:00.000Z";
 const later = "2026-09-04T10:10:00.000Z";
 const seed = Effect.fn("seedMemorySource")(function* (
@@ -99,6 +105,12 @@ describe("MemorySourceReader", () => {
       assert.include(transcript, "Remember the deployment decision");
       assert.include(transcript, "The earlier decision applies here");
       assert.include(transcript, "Keep using the persistent volume");
+      const conversation = yield* decodeConversationDates(transcript);
+      assert.deepEqual(
+        conversation.map((turn) => turn.observedAt),
+        [at, later],
+      );
+      assert.equal((yield* decodeEvidenceDate(sourceText(rows[0]!))).observedAt, later);
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 

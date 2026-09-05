@@ -459,18 +459,16 @@ export function AutomationsPage({ search: routeSearch }: AutomationsPageProps) {
     setEditorOpen(true);
   };
   const createWithAgent = async () => {
-    const project =
-      projects.find((candidate) => candidate.id === routeSearch.projectId) ?? projects[0] ?? null;
-    if (!project) {
-      openCommandPalette({ open: "add-project" });
-      return;
-    }
-    if (openingChat) return;
+    const project = projects.find((candidate) => candidate.id === routeSearch.projectId) ?? null;
+    if (!environmentId || openingChat) return;
     setOpeningChat(true);
     try {
-      const draft = await openNewThread(scopeProjectRef(project.environmentId, project.id));
+      const draft = await openNewThread(
+        project ? scopeProjectRef(project.environmentId, project.id) : null,
+        { environmentId },
+      );
       if (!draft) {
-        mutationError("Could not open a task", new Error("The project is not available."));
+        mutationError("Could not open a task", new Error("The environment is not available."));
         return;
       }
       useComposerDraftStore.getState().setPrompt(draft.draftId, AUTOMATION_CHAT_STARTER_PROMPT);
@@ -547,17 +545,6 @@ export function AutomationsPage({ search: routeSearch }: AutomationsPageProps) {
               <div className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">
                 Loading automations...
               </div>
-            ) : projects.length === 0 ? (
-              <AutomationEmptyState
-                title="Create a project first"
-                description="Automations need a project so the agent knows where to work. Create one before setting up an automation."
-                action={
-                  <Button onClick={() => openCommandPalette({ open: "add-project" })}>
-                    <PlusIcon />
-                    Create project
-                  </Button>
-                }
-              />
             ) : automations.length === 0 ? (
               <AutomationEmptyState
                 title="Run prompts on a schedule"

@@ -7,6 +7,7 @@ import { describe, expect } from "vite-plus/test";
 import {
   MEMORY_RECOMMENDATION_CHAR_BUDGET,
   buildMemoryRecommendationPrompt,
+  selectRecommendationMemories,
   unsupportedMemoryRecommendationGeneration,
   validateMemoryRecommendations,
 } from "./MemoryRecommendationGeneration.ts";
@@ -48,6 +49,35 @@ describe("memory recommendation generation", () => {
     expect(encoded).toContain("Included");
   });
 
+  it("balances projects and source threads within the bounded evidence set", () => {
+    const busy = Array.from({ length: 40 }, (_, index) =>
+      memory({
+        id: `busy-${index}`,
+        projectId: ProjectId.make("busy"),
+        sourceIds: [`busy-thread/turn-${index}`],
+        updatedAt: "2026-09-05T00:00:00.000Z",
+      }),
+    );
+    const quiet = memory({
+      id: "quiet",
+      projectId: ProjectId.make("quiet"),
+      sourceIds: ["quiet-thread/turn"],
+    });
+    const otherThread = memory({
+      id: "other-thread",
+      projectId: ProjectId.make("busy"),
+      sourceIds: ["other-thread/turn"],
+    });
+    const selected = selectRecommendationMemories([...busy, quiet, otherThread]);
+    expect(selected).toHaveLength(32);
+    expect(selected.slice(0, 3).map((entry) => entry.id)).toEqual([
+      "busy-0",
+      "quiet",
+      "other-thread",
+    ]);
+    expect(busy).toHaveLength(40);
+  });
+
   it.effect("keeps automations, de-duplicates, caps at two, and keeps stable IDs", () =>
     Effect.gen(function* () {
       const raw = {
@@ -87,13 +117,15 @@ describe("memory recommendation generation", () => {
     }),
   );
 
-  it("identifies project context without including unrelated project data", () => {
+  it("identifies projects in global suggestions including projectless automation creation", () => {
     const prompt = buildMemoryRecommendationPrompt({
       ...input,
-      project: { title: "T3 Code" },
+      projects: [{ projectId: "project-1", title: "T3 Code", workspaceRoot: "/workspace/t3" }],
       memories: [memory({ projectId: ProjectId.make("project-1") })],
     }).prompt;
-    expect(prompt).toContain('project "T3 Code"');
-    expect(prompt).toContain("personal memories and memories for this exact project");
+    expect(prompt).toContain('"title":"T3 Code"');
+    expect(prompt).toContain("/workspace/t3");
+    expect(prompt).toContain("across all their projects");
+    expect(prompt).toContain("Automation suggestions are also valid without a selected project");
   });
 });

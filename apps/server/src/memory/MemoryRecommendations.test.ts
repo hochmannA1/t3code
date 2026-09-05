@@ -11,17 +11,13 @@ import type * as Scope from "effect/Scope";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
+import { forkParked, ServerActivation } from "../serverActivation.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { forkParked } from "../serverActivation.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
 import type { MemoryRecommendationGenerationInput } from "../textGeneration/MemoryRecommendationGeneration.ts";
-import {
-  make,
-  MEMORY_RECOMMENDATION_WARM_CONCURRENCY,
-  MEMORY_RECOMMENDATION_WARM_PROJECT_LIMIT,
-} from "./MemoryService.ts";
+import { make } from "./MemoryService.ts";
 import * as Sources from "./MemorySourceReader.ts";
 import * as Store from "./MemoryStore.ts";
 
@@ -97,21 +93,6 @@ const seedProject = (index: number) =>
         ${`Project ${index}`},
         ${`/workspace/${index}`},
         '[]',
-        ${stamp},
-        ${stamp}
-      )`;
-  });
-
-const seedProjectActivity = (index: number, day: number) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const stamp = `2026-09-${String(day).padStart(2, "0")}T00:00:00.000Z`;
-    yield* sql`INSERT INTO projection_threads
-      (thread_id, project_id, title, created_at, updated_at)
-      VALUES (
-        ${`recommendation-thread-${index}`},
-        ${projectId(index)},
-        ${`Thread ${index}`},
         ${stamp},
         ${stamp}
       )`;
@@ -209,159 +190,167 @@ describe("memory recommendation caching and warmup", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("invalidates only scopes affected by the changed memory", () =>
+  it.effect(
+    "parks warmup before readiness and shares its running generation with the first draft",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-startup-" });
+        const activation = yield* Deferred.make<void>();
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let calls = 0;
+        yield* openService(
+          baseDir,
+          () =>
+            Effect.gen(function* () {
+              calls += 1;
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+              return recommendation("Prepared during startup");
+            }),
+          (service) =>
+            Effect.gen(function* () {
+              yield* service.upsert({
+                projectId: null,
+                title: "Next action",
+                text: "Prepare next action.",
+                pinned: true,
+              });
+              yield* forkParked(service.warmRecommendations()).pipe(
+                Effect.provideService(ServerActivation, Deferred.await(activation)),
+              );
+              assert.equal(calls, 0);
+              yield* Deferred.succeed(activation, undefined);
+              yield* Deferred.await(started);
+              // Model generation is still blocked, but readiness returned and other service work runs.
+              assert.equal((yield* service.getState({})).entries.length, 1);
+              const draft = yield* service
+                .getRecommendations({ projectId: null })
+                .pipe(Effect.forkChild);
+              yield* Deferred.succeed(release, undefined);
+              assert.equal(
+                (yield* Fiber.join(draft)).recommendations[0]?.label,
+                "Prepared during startup",
+              );
+              assert.equal(calls, 1);
+            }),
+        );
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("stops background recommendation generation when the service scope closes", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-scope-cache-" });
-      const calls: Array<string> = [];
-      const generate = (input: MemoryRecommendationGenerationInput) =>
-        Effect.sync(() => {
-          const scope = input.project?.title ?? "personal";
-          calls.push(scope);
-          return recommendation(scope);
-        });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-shutdown-" });
+      const started = yield* Deferred.make<void>();
+      const stopped = yield* Deferred.make<void>();
+      yield* openService(
+        baseDir,
+        () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, undefined);
+            return yield* Effect.never;
+          }).pipe(Effect.ensuring(Deferred.succeed(stopped, undefined))),
+        (service) =>
+          Effect.gen(function* () {
+            yield* service.upsert({
+              projectId: null,
+              title: "Next action",
+              text: "Prepare next action.",
+              pinned: true,
+            });
+            yield* service.warmRecommendations().pipe(Effect.forkChild);
+            yield* Deferred.await(started);
+          }),
+      ).pipe(Effect.scoped);
+      assert.isTrue(yield* Deferred.isDone(stopped));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 
-      yield* openService(baseDir, generate, (service) =>
-        Effect.gen(function* () {
-          yield* seedProject(1);
-          yield* seedProject(2);
-          yield* service.upsert({
-            projectId: null,
-            title: "Personal",
-            text: "Keep changes focused.",
-            pinned: true,
-          });
-          yield* service.upsert({
-            projectId: projectId(1),
-            title: "First project",
-            text: "First project detail.",
-            pinned: true,
-          });
-          yield* service.upsert({
-            projectId: projectId(2),
-            title: "Second project",
-            text: "Second project detail.",
-            pinned: true,
-          });
-
-          const readAllScopes = () =>
-            Effect.forEach(
-              [null, projectId(1), projectId(2)] as const,
-              (scope) => service.getRecommendations({ projectId: scope }),
-              { concurrency: 1, discard: true },
+  it.effect("shares global recommendations and invalidates them when any project changes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-global-" });
+      const inputs: Array<MemoryRecommendationGenerationInput> = [];
+      yield* openService(
+        baseDir,
+        (input) =>
+          Effect.sync(() => {
+            inputs.push(input);
+            return recommendation("Global next action");
+          }),
+        (service) =>
+          Effect.gen(function* () {
+            yield* seedProject(1);
+            yield* seedProject(2);
+            for (const index of [1, 2]) {
+              yield* service.upsert({
+                projectId: projectId(index),
+                title: `Project ${index}`,
+                text: `Continue project ${index}.`,
+                pinned: true,
+              });
+            }
+            const global = yield* service.getRecommendations({ projectId: null });
+            assert.equal(global.recommendations.length, 1);
+            assert.equal(inputs.length, 1);
+            assert.sameMembers(
+              inputs[0]!.memories.map((memory) => memory.projectId),
+              [projectId(1), projectId(2)],
             );
-          yield* readAllScopes();
-          assert.deepEqual(calls, ["personal", "Project 1", "Project 2"]);
-
-          yield* service.upsert({
-            projectId: projectId(2),
-            title: "Second project changed",
-            text: "Only this project changed.",
-            pinned: true,
-          });
-          yield* readAllScopes();
-          assert.deepEqual(calls, ["personal", "Project 1", "Project 2", "Project 2"]);
-
-          yield* service.upsert({
-            projectId: null,
-            title: "Personal changed",
-            text: "Every scope receives personal memory.",
-            pinned: true,
-          });
-          yield* readAllScopes();
-          assert.deepEqual(calls, [
-            "personal",
-            "Project 1",
-            "Project 2",
-            "Project 2",
-            "personal",
-            "Project 1",
-            "Project 2",
-          ]);
-        }),
+            assert.equal(inputs[0]!.projects?.length, 2);
+            assert.deepEqual(
+              yield* service.getRecommendations({ projectId: projectId(1) }),
+              global,
+            );
+            yield* service.warmRecommendations();
+            assert.equal(inputs.length, 1);
+            yield* service.upsert({
+              projectId: projectId(2),
+              title: "Changed",
+              text: "New next action.",
+              pinned: true,
+            });
+            yield* service.getRecommendations({ projectId: null });
+            assert.equal(inputs.length, 2);
+            yield* service.getRecommendations({ projectId: projectId(2) });
+            assert.equal(inputs.length, 2);
+          }),
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect(
-    "warms personal and recent project scopes without blocking startup or exceeding limits",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-warmup-" });
-        const firstWaveStarted = yield* Deferred.make<void>();
-        const releaseFirstWave = yield* Deferred.make<void>();
-        const warmupCompleted = yield* Deferred.make<void>();
-        const generatedScopes: Array<string> = [];
-        const expectedCalls = MEMORY_RECOMMENDATION_WARM_PROJECT_LIMIT + 1;
-        let active = 0;
-        let completed = 0;
-        let maxActive = 0;
-        const generate: RecommendationGenerator = (input: MemoryRecommendationGenerationInput) =>
-          Effect.acquireUseRelease(
-            Effect.sync(() => {
-              active += 1;
-              maxActive = Math.max(maxActive, active);
-              generatedScopes.push(input.project?.title ?? "personal");
-              return generatedScopes.length;
-            }),
-            (callNumber) =>
-              Effect.gen(function* () {
-                if (callNumber === MEMORY_RECOMMENDATION_WARM_CONCURRENCY) {
-                  yield* Deferred.succeed(firstWaveStarted, undefined);
-                }
-                yield* Deferred.await(releaseFirstWave);
-                return recommendation(input.project?.title ?? "personal");
-              }),
-            () =>
-              Effect.sync(() => {
-                active -= 1;
-                completed += 1;
-              }).pipe(
-                Effect.flatMap(() =>
-                  completed === expectedCalls
-                    ? Deferred.succeed(warmupCompleted, undefined)
-                    : Effect.void,
-                ),
-              ),
-          );
-
-        yield* openService(baseDir, generate, (service) =>
+  it.effect("does not reuse project evidence after its project is deleted", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-memory-deleted-project-" });
+      let calls = 0;
+      yield* openService(
+        baseDir,
+        () =>
+          Effect.sync(() => {
+            calls += 1;
+            return recommendation("Continue project");
+          }),
+        (service) =>
           Effect.gen(function* () {
+            yield* seedProject(1);
             yield* service.upsert({
-              projectId: null,
-              title: "Personal",
-              text: "Keep startup responsive.",
+              projectId: projectId(1),
+              title: "Next action",
+              text: "Continue work.",
               pinned: true,
             });
-            for (let index = 0; index < MEMORY_RECOMMENDATION_WARM_PROJECT_LIMIT + 2; index += 1) {
-              yield* seedProject(index);
-              yield* service.upsert({
-                projectId: projectId(index),
-                title: `Memory ${index}`,
-                text: `Project ${index} memory.`,
-                pinned: true,
-              });
-            }
-            yield* seedProjectActivity(0, 20);
-            yield* seedProjectActivity(1, 21);
-
-            yield* forkParked(service.warmRecommendations());
-            yield* Deferred.await(firstWaveStarted);
-            assert.equal(generatedScopes.length, MEMORY_RECOMMENDATION_WARM_CONCURRENCY);
-            assert.equal(maxActive, MEMORY_RECOMMENDATION_WARM_CONCURRENCY);
-            yield* Deferred.succeed(releaseFirstWave, undefined);
-            yield* Deferred.await(warmupCompleted);
-
-            assert.equal(generatedScopes.length, expectedCalls);
-            assert.equal(maxActive, MEMORY_RECOMMENDATION_WARM_CONCURRENCY);
-            assert.includeMembers(generatedScopes, ["personal"]);
-            assert.sameMembers(
-              generatedScopes.filter((scope) => scope !== "personal"),
-              ["Project 0", "Project 1", "Project 4", "Project 5", "Project 6", "Project 7"],
-            );
+            yield* service.getRecommendations({ projectId: null });
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`UPDATE projection_projects SET deleted_at = '2026-09-05T00:00:00.000Z' WHERE project_id = ${projectId(1)}`;
+            const result = yield* service.getRecommendations({ projectId: null });
+            assert.deepEqual(result.recommendations, []);
+            assert.equal(result.reason, "no-memories");
+            assert.equal(calls, 1);
           }),
-        );
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

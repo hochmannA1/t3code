@@ -1,4 +1,8 @@
-import type { MemoryRecommendation, MemoryRecommendationType, ProjectId } from "@t3tools/contracts";
+import type {
+  MemoryRecommendation,
+  MemoryRecommendationType,
+  MemoryGetRecommendationsResult,
+} from "@t3tools/contracts";
 import {
   CalendarClockIcon,
   FileTextIcon,
@@ -11,6 +15,7 @@ export type DraftRecommendation = MemoryRecommendation;
 
 interface DraftRecommendationsProps {
   readonly recommendations: ReadonlyArray<DraftRecommendation>;
+  readonly reason?: MemoryGetRecommendationsResult["reason"];
   readonly isPending: boolean;
   readonly retryable: boolean;
   readonly error: string | null;
@@ -24,13 +29,6 @@ export function recommendationsForDraft(
   recommendations: ReadonlyArray<DraftRecommendation>,
 ): ReadonlyArray<DraftRecommendation> {
   return recommendations.slice(0, MAX_VISIBLE_RECOMMENDATIONS);
-}
-
-export function recommendationProjectIdForDraft(
-  projectless: boolean,
-  activeProjectId: ProjectId | undefined,
-): ProjectId | null | undefined {
-  return projectless ? null : activeProjectId;
 }
 
 export function shouldShowDraftRecommendationRetry(input: {
@@ -57,6 +55,7 @@ function RecommendationIcon({ kind }: { readonly kind: MemoryRecommendationType 
 export function DraftRecommendations({
   recommendations,
   isPending,
+  reason,
   retryable,
   error,
   onSelect,
@@ -73,10 +72,28 @@ export function DraftRecommendations({
   if (visible.length === 0 && !showRetry) {
     return (
       <div
-        aria-hidden="true"
-        className="mx-auto mt-3 min-h-[5.625rem] w-full max-w-3xl"
+        className="mx-auto mt-3 flex min-h-[5.625rem] w-full max-w-3xl items-start justify-center gap-2 pt-3 text-xs text-muted-foreground"
         data-draft-recommendations="empty"
-      />
+      >
+        <span role="status">
+          {isPending
+            ? "Preparing suggestions from memory…"
+            : reason === "disabled"
+              ? "Enable memory in Settings to see suggestions."
+              : reason === "no-memories"
+                ? "Suggestions appear as memories are saved."
+                : "No suggestions from memory yet."}
+        </span>
+        {!isPending && reason !== "disabled" ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Refresh
+          </button>
+        ) : null}
+      </div>
     );
   }
 

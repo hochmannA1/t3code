@@ -149,11 +149,8 @@ export const fingerprint = (value: string) =>
 
 const scopedRecommendationMetadata = (
   entries: ReadonlyArray<EntryMetadata>,
-  projectId: ProjectId | null,
-) =>
-  entries
-    .filter((entry) => entry.projectId === null || entry.projectId === projectId)
-    .toSorted((left, right) => left.id.localeCompare(right.id));
+  _projectId: ProjectId | null,
+) => entries.toSorted((left, right) => left.id.localeCompare(right.id));
 
 export const recommendationMemoryDigest = (
   entries: ReadonlyArray<EntryMetadata>,
@@ -182,10 +179,7 @@ const purgeRecommendationCache = (
   scopes: ReadonlySet<ProjectId | null>,
 ) => {
   if (scopes.size === 0) return cache;
-  if (scopes.has(null)) return {};
-  return Object.fromEntries(
-    Object.entries(cache).filter(([, entry]) => !scopes.has(entry.projectId)),
-  );
+  return {};
 };
 
 export const make = Effect.gen(function* () {
