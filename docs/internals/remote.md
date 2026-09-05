@@ -9,6 +9,12 @@ each piece lives. For the user-facing setup guide see
 
 ## The model
 
+Production JavaScript resolves lazy-chunk preloads and imported assets relative to the importing
+bundle. Keep this behavior in the web build: origin-root `/assets/` preloads bypass a reverse proxy's
+public path prefix and can trigger a reload when opening Files or another lazy panel. Integrations
+hosting T3 below a prefix must also keep the HTML entry assets rooted at that public prefix when
+reloading a nested thread route, and configure the router and API endpoints for the same prefix.
+
 T3 has one runtime boundary: a client talks to a T3 server over HTTP and WebSocket, and the server
 owns orchestration, providers, terminals, git, and filesystem operations. Remoteness is expressed at
 the connection layer, never by splitting the runtime.

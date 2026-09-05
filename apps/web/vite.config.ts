@@ -212,6 +212,11 @@ export default defineConfig(() => {
     },
     experimental: {
       bundledDev,
+      // Lazy panel preloads must follow the importing bundle when a reverse
+      // proxy serves the client below a path prefix (or Electron uses file:).
+      renderBuiltUrl(_filename, { hostType }) {
+        return hostType === "js" ? { relative: true } : undefined;
+      },
     },
     server: {
       host,
