@@ -56,3 +56,7 @@ The displayed memory directory contains a generated `MEMORY.md` index, `memory_s
 The default **2,000 context tokens** is an approximate limit on memory added to each conversation turn (8,000 characters). It includes reading guidance and a small selection of entries or index records. It does not limit the model context used to learn or review memories. Agents can search and read relevant entries for more detail, so raising the budget is usually less useful than keeping entries precise and grounded.
 
 Personal memory can include established preferences and confirmed workflows useful across projects. Repository-specific facts and procedures remain with their project. Learning aims to keep lasting decisions and lessons rather than incident counts, sprint progress, or proposed actions. Review entries and their source conversations when judging quality: automated synthesis can still omit useful details or retain a weak claim.
+
+Antigravity does not support background memory generation or memory-based recommendations.
+Choose Codex, Claude, or OpenCode for those jobs in Settings. Existing recalled memories can still
+be included in Antigravity conversations.

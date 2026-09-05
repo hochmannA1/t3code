@@ -9,7 +9,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
-import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { make, recommendationMemoryDigest, type MemorySource } from "./MemoryStore.ts";
 
 const remembered: MemoryEntry = {

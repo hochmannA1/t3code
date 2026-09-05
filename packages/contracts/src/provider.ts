@@ -70,6 +70,9 @@ export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
   /** Historical recall, separate from the user's persisted message. */
   memoryContext: Schema.optional(Schema.String.check(Schema.isMaxLength(32768))),
+  /** Internal recovery signal. Allows an empty turn only for adapters that
+      explicitly support promptless continuation. */
+  continuation: Schema.optional(Schema.Boolean),
   input: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
   ),

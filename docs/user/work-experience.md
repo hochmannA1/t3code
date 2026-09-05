@@ -47,3 +47,17 @@ Work asks Codex to write in plain language for business roles such as analysts, 
 Intermediate reasoning summaries and technical activity are grouped behind **Worked for ...** after a task finishes and can be expanded when needed. Work also hides developer-only Terminal, Diff, and pull-request panels; files, browser previews, and agents remain available.
 
 Completed tasks move to the **Completed** section. Choose **Reopen** to return one to the active list. Code mode keeps the original Settle terminology.
+
+## Thread controls and previews
+
+Work threads support sent-prompt history with the up arrow and Page Up/Page Down navigation.
+The project picker and task complexity control remain available below a collapsed composer.
+Composer collapse preferences apply in Work too.
+
+Attached documents open in the file viewer. Browser profiles and file panels use the same panel
+behavior as Code. Work keeps terminal, source-control, and pull-request controls out of the thread
+interface. Draft indicators help you find unfinished prompts in the activity sidebar; project
+icons appear wherever project names are shown.
+
+Completed activity stays folded behind its disclosure, while final replies, context compaction,
+and subagent links remain accessible. Expanding activity restores its details.

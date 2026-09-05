@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../persistence/Migrations.ts";
-import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { make, sourceId, sourceRevision, sourceText } from "./MemorySourceReader.ts";
 
 const EvidenceDate = Schema.Struct({ observedAt: Schema.String });

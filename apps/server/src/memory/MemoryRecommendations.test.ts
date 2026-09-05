@@ -13,7 +13,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
 import { forkParked, ServerActivation } from "../serverActivation.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
-import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as ServerSettings from "../serverSettings.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
 import type { MemoryRecommendationGenerationInput } from "../textGeneration/MemoryRecommendationGeneration.ts";

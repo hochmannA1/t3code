@@ -19,7 +19,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
-import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
 import type { MemoryGenerationInput } from "../textGeneration/MemoryGeneration.ts";
 import type { MemoryRecommendationGenerationInput } from "../textGeneration/MemoryRecommendationGeneration.ts";

@@ -1,10 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Migrator from "effect/unstable/sql/Migrator";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "./Migrations.ts";
-import * as NodeSqliteClient from "./NodeSqliteClient.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import Automations from "./Migrations/Fork_001_Automations.ts";
 
 describe("fork migration namespace", () => {
@@ -19,6 +18,10 @@ describe("fork migration namespace", () => {
         [
           { migration_id: 42, name: "ProjectionThreadLinkedPullRequest" },
           { migration_id: 43, name: "ProjectionThreadsUnsettledAt" },
+          { migration_id: 44, name: "ClearAutomaticProjectModelDefaults" },
+          { migration_id: 45, name: "ProjectionProjectsAutoPull" },
+          { migration_id: 46, name: "RepairAutomaticSettlementTimestamps" },
+          { migration_id: 47, name: "ProjectionProjectIcon" },
         ],
       );
       assert.deepEqual(
@@ -54,23 +57,13 @@ describe("fork migration namespace", () => {
           { migration_id: 2, created_at: "2026-08-31 10:00:00" },
         ],
       );
-      const futureUpstream = Migrator.fromRecord({
-        "44_ClearAutomaticProjectModelDefaults":
-          sql`CREATE TABLE upstream_44_proof (value TEXT)`.pipe(Effect.asVoid),
-        "45_ProjectionProjectsAutoPull":
-          sql`ALTER TABLE upstream_44_proof ADD COLUMN second_value TEXT`.pipe(Effect.asVoid),
-        "46_RepairAutomaticSettlementTimestamps":
-          sql`CREATE TABLE upstream_46_proof (value TEXT)`.pipe(Effect.asVoid),
-        "47_ProjectionProjectIcon":
-          sql`ALTER TABLE upstream_46_proof ADD COLUMN icon_value TEXT`.pipe(Effect.asVoid),
-      });
-      const ran = yield* Migrator.make({})({ loader: futureUpstream });
-      assert.deepEqual(ran, [
-        [44, "ClearAutomaticProjectModelDefaults"],
-        [45, "ProjectionProjectsAutoPull"],
-        [46, "RepairAutomaticSettlementTimestamps"],
-        [47, "ProjectionProjectIcon"],
-      ]);
+      const projectColumns = yield* sql<{
+        readonly name: string;
+      }>`PRAGMA table_info(projection_projects)`;
+      assert.includeMembers(
+        projectColumns.map((column) => column.name),
+        ["auto_pull", "project_icon_json"],
+      );
       yield* runMigrations({ toForkMigrationInclusive: 2 });
       assert.deepEqual(
         [

@@ -59,6 +59,10 @@ import Migration0043 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
 import ForkMigration0001 from "./Migrations/Fork_001_Automations.ts";
 import ForkMigration0002 from "./Migrations/Fork_002_RepairRenumberedProjectionThreadColumns.ts";
 import ForkMigration0003 from "./Migrations/Fork_003_Memory.ts";
+import Migration0044 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
+import Migration0045 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
+import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
+import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -114,6 +118,10 @@ export const migrationEntries = [
   [41, "AuthSessionClientConnection", Migration0041],
   [42, "ProjectionThreadLinkedPullRequest", Migration0042],
   [43, "ProjectionThreadsUnsettledAt", Migration0043],
+  [44, "ClearAutomaticProjectModelDefaults", Migration0044],
+  [45, "ProjectionProjectsAutoPull", Migration0045],
+  [46, "RepairAutomaticSettlementTimestamps", Migration0046],
+  [47, "ProjectionProjectIcon", Migration0047],
 ] as const;
 
 // Fork IDs have their own ledger and never advance the upstream migration watermark.
