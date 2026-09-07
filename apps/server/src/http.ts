@@ -1,3 +1,5 @@
+import * as NodeStream from "@effect/platform-node/NodeStream";
+import { directoryDownload } from "./assets/DirectoryDownload.ts";
 import Mime from "@effect/platform-node/Mime";
 import {
   AuthOrchestrationOperateScope,
@@ -158,6 +160,7 @@ function assetByteRange(header: string, size: bigint) {
 export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   asset: {
     readonly path: string;
+    readonly directory?: boolean;
     readonly download?: boolean;
     readonly fileName?: string;
     readonly mimeType?: string;
@@ -167,6 +170,23 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   ifRangeHeader?: string,
   method: "GET" | "HEAD" = "GET",
 ) {
+  if (asset.directory) {
+    const headers = {
+      "Content-Type": "application/zip",
+      "Content-Disposition": downloadContentDisposition(asset.fileName),
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    };
+    if (method === "HEAD") return HttpServerResponse.empty({ headers });
+    const archive = yield* Effect.tryPromise(() => directoryDownload(asset.path));
+    return HttpServerResponse.stream(
+      NodeStream.fromReadable({
+        evaluate: () => archive,
+        onError: (cause) => cause,
+      }),
+      { headers },
+    );
+  }
   const headers = assetResponseHeaders(asset.path, asset);
   const mediaFile = asset.file;
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;

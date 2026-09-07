@@ -47,6 +47,46 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
+  it.effect("downloads arbitrary files and directories using exact signed URLs", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-download-" });
+      yield* fs.writeFileString(path.join(root, "report.csv"), "a,b\n1,2");
+      yield* fs.makeDirectory(path.join(root, "folder"));
+      for (const name of ["report.csv", "folder"]) {
+        const result = yield* issueAssetUrl({
+          resource: { _tag: "workspace-download", cwd: root, path: name },
+        });
+        const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+        const separator = suffix.indexOf("/");
+        const token = suffix.slice(0, separator);
+        const asset = yield* resolveAsset(token, suffix.slice(separator + 1));
+        expect(asset).toMatchObject({
+          kind: "file",
+          download: true,
+          fileName: name === "folder" ? "folder.zip" : name,
+        });
+        if (name === "folder") {
+          expect(asset?.directory).toBe(true);
+          const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset!));
+          expect(response.headers.get("content-type")).toBe("application/zip");
+          const bytes = yield* Effect.promise(() => response.arrayBuffer());
+          expect(new Uint8Array(bytes).slice(0, 2)).toEqual(new Uint8Array([80, 75]));
+          const head = HttpServerResponse.toWeb(
+            yield* assetFileResponse(asset!, undefined, undefined, "HEAD"),
+          );
+          expect(yield* Effect.promise(() => head.text())).toBe("");
+        } else {
+          const response = yield* assetFileResponse(asset!);
+          expect(response.headers["content-disposition"]).toContain('filename="report.csv"');
+        }
+        expect(yield* resolveAsset(token, "other.csv")).toBeNull();
+        expect(yield* resolveAsset(token + "tampered", name)).toBeNull();
+      }
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("issues exact URLs for media and browser documents outside the workspace", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

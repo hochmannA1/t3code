@@ -2465,6 +2465,7 @@ const makeWsRpcLayer = (
             WS_METHODS.assetsCreateUrl,
             Effect.gen(function* () {
               if (
+                input.resource._tag === "workspace-download" ||
                 input.resource._tag === "attachment" ||
                 input.resource._tag === "native-app-icon"
               ) {

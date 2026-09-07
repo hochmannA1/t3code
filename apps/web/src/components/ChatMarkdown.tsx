@@ -1,3 +1,5 @@
+import { useWorkspaceDownload } from "~/assets/useWorkspaceDownload";
+import { DownloadIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   CheckIcon,
@@ -1092,6 +1094,7 @@ interface MarkdownFileLinkProps {
   onOpenInPanel: (panelPath: string, line: number | undefined) => void;
   openInEditorMenuLabel: string;
   onOpenInBrowser?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
+  onDownload?: ((path: string) => Promise<void>) | undefined;
   onOpenMedia?: (() => void) | undefined;
   onReveal?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   /** Platform-specific menu label ("Reveal in Finder", ...); required for the
@@ -1768,6 +1771,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   openInEditorMenuLabel,
   onOpenInBrowser,
   onOpenMedia,
+  onDownload,
   onReveal,
   revealLabel,
   className,
@@ -1951,12 +1955,17 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
               ? ([{ id: "open-in-browser", label: "Open in integrated browser" }] as const)
               : []),
             ...(onReveal && revealLabel ? ([{ id: "reveal", label: revealLabel }] as const) : []),
+            ...(onDownload ? [{ id: "download", label: "Download (folders as ZIP)" }] : []),
             { id: "copy-relative", label: "Copy relative path" },
             { id: "copy-full", label: "Copy full path" },
           ] as const,
           position,
         );
 
+        if (clicked === "download") {
+          await onDownload?.(iconPath);
+          return;
+        }
         if (clicked === "preview-media") {
           onOpenMedia?.();
           return;
@@ -1989,6 +1998,8 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     },
     [
       displayPath,
+      onDownload,
+      iconPath,
       handleCopy,
       handleOpenInBrowser,
       handleOpenInEditor,
@@ -2036,66 +2047,82 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   });
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          hasPrimaryAction ? (
-            <a
-              href={href}
-              className={cn(
-                CHAT_FILE_TAG_CHIP_CLASS_NAME,
-                MARKDOWN_FILE_LINK_CLASS_NAME,
-                className,
-              )}
-              data-markdown-copy={copyMarkdown}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                if (onOpen && shouldOpenMarkdownFileLinkInEditor(event)) {
-                  handleOpenInEditor();
-                  return;
-                }
-                if (useBrowserPrimaryAction) {
-                  handleOpenInBrowser();
-                  return;
-                }
-                handleOpenInFilePreview();
-              }}
-              onContextMenu={handleContextMenu}
-            >
-              <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
-            </a>
-          ) : (
-            <button
-              type="button"
-              aria-label={`File options for ${label}`}
-              aria-haspopup="menu"
-              className={cn(
-                CHAT_FILE_TAG_CHIP_CLASS_NAME,
-                MARKDOWN_FILE_LINK_CLASS_NAME,
-                "select-text",
-                className,
-              )}
-              data-markdown-copy={copyMarkdown}
-              onClick={handleContextMenu}
-              onContextMenu={handleContextMenu}
-            >
-              <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
-            </button>
-          )
-        }
-      />
-      <TooltipPopup
-        side="top"
-        className="max-w-[min(40rem,calc(100vw-2rem))] font-mono text-[11px] leading-tight"
-      >
-        {/* The full path: the chip already shows the shortened form, and a link
+    <span className="inline-flex items-center gap-0.5">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            hasPrimaryAction ? (
+              <a
+                href={href}
+                className={cn(
+                  CHAT_FILE_TAG_CHIP_CLASS_NAME,
+                  MARKDOWN_FILE_LINK_CLASS_NAME,
+                  className,
+                )}
+                data-markdown-copy={copyMarkdown}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (onOpen && shouldOpenMarkdownFileLinkInEditor(event)) {
+                    handleOpenInEditor();
+                    return;
+                  }
+                  if (useBrowserPrimaryAction) {
+                    handleOpenInBrowser();
+                    return;
+                  }
+                  handleOpenInFilePreview();
+                }}
+                onContextMenu={handleContextMenu}
+              >
+                <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
+              </a>
+            ) : (
+              <button
+                type="button"
+                aria-label={`File options for ${label}`}
+                aria-haspopup="menu"
+                className={cn(
+                  CHAT_FILE_TAG_CHIP_CLASS_NAME,
+                  MARKDOWN_FILE_LINK_CLASS_NAME,
+                  "select-text",
+                  className,
+                )}
+                data-markdown-copy={copyMarkdown}
+                onClick={handleContextMenu}
+                onContextMenu={handleContextMenu}
+              >
+                <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
+              </button>
+            )
+          }
+        />
+        <TooltipPopup
+          side="top"
+          className="max-w-[min(40rem,calc(100vw-2rem))] font-mono text-[11px] leading-tight"
+        >
+          {/* The full path: the chip already shows the shortened form, and a link
             to the workspace root collapses to a bare label that repeats it. */}
-        <div className="overflow-x-auto whitespace-nowrap [scrollbar-color:color-mix(in_srgb,var(--contrast-border)_78%,transparent)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[color-mix(in_srgb,var(--contrast-border)_78%,transparent)] [&::-webkit-scrollbar-track]:bg-transparent">
-          {targetPath}
-        </div>
-      </TooltipPopup>
-    </Tooltip>
+          <div className="overflow-x-auto whitespace-nowrap [scrollbar-color:color-mix(in_srgb,var(--contrast-border)_78%,transparent)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[color-mix(in_srgb,var(--contrast-border)_78%,transparent)] [&::-webkit-scrollbar-track]:bg-transparent">
+            {targetPath}
+          </div>
+        </TooltipPopup>
+      </Tooltip>
+      {onDownload && (
+        <button
+          type="button"
+          aria-label={`Download ${label}`}
+          className="inline-flex rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void onDownload(iconPath);
+          }}
+        >
+          <DownloadIcon className="size-3" />
+        </button>
+      )}
+    </span>
   );
 }, areMarkdownFileLinkPropsEqual);
 
@@ -2114,6 +2141,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.copyMarkdown === next.copyMarkdown &&
     previous.theme === next.theme &&
     previous.threadRef === next.threadRef &&
+    previous.onDownload === next.onDownload &&
     previous.onOpen === next.onOpen &&
     previous.onOpenInPanel === next.onOpenInPanel &&
     previous.openInEditorMenuLabel === next.openInEditorMenuLabel &&
@@ -2161,6 +2189,7 @@ function useChatMarkdownState({
     reportFailure: false,
   });
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
+  const download = useWorkspaceDownload(environmentId, cwd);
   const remoteOpen = useRemoteOpenResolution(environmentId);
   const canUseShellActions = canUseMarkdownFileShellActions(
     environmentId,
@@ -2483,6 +2512,7 @@ function useChatMarkdownState({
           theme={resolvedTheme}
           threadRef={threadRef}
           {...(canUseShellActions ? { onOpen: openInPreferredEditor } : {})}
+          onDownload={environmentId && cwd ? download : undefined}
           onOpenInPanel={openFileInPanel}
           onOpenMedia={
             threadRef && canPreviewMedia
@@ -2509,6 +2539,9 @@ function useChatMarkdownState({
     },
     [
       canUseShellActions,
+      download,
+      environmentId,
+      cwd,
       fileLinkParentSuffixByPath,
       openFileInPanel,
       openInPreferredEditor,
