@@ -123,6 +123,30 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("reports pixel dimensions from an image header and nothing for other files", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-media-dimensions-" });
+      const png = Uint8Array.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0,
+        0x06, 0x40, 0, 0, 0x03, 0x84,
+      ]);
+      yield* fs.writeFile(path.join(root, "shot.png"), png);
+      yield* fs.writeFileString(path.join(root, "clip.mp4"), "video");
+      yield* fs.writeFileString(path.join(root, "broken.png"), "not a png");
+      const issue = (name: string) =>
+        issueAssetUrl({
+          resource: { _tag: "media-file", threadId: ThreadId.make("thread-1"), path: name },
+          workspaceRoot: root,
+        });
+
+      expect((yield* issue("shot.png")).imageDimensions).toEqual({ width: 1600, height: 900 });
+      expect((yield* issue("clip.mp4")).imageDimensions).toBeUndefined();
+      expect((yield* issue("broken.png")).imageDimensions).toBeUndefined();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("resolves relative media paths from the thread workspace, including outside it", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -609,7 +633,6 @@ describe("AssetAccess", () => {
       expect(yield* resolveAsset(token, "ignored.png")).toEqual({
         kind: "file",
         path: attachmentPath,
-        download: false,
       });
     }).pipe(Effect.provide(testLayer)),
   );
@@ -619,7 +642,7 @@ describe("AssetAccess", () => {
       const config = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const attachmentId = "thread-1-00000000-0000-4000-8000-000000000002";
+      const attachmentId = "thread-1-00000000-0000-4000-8000-000000000002-pdf";
       const attachmentPath = path.join(config.attachmentsDir, `${attachmentId}.pdf`);
       yield* fileSystem.makeDirectory(config.attachmentsDir, { recursive: true });
       yield* fileSystem.writeFile(attachmentPath, new Uint8Array([1, 2, 3]));

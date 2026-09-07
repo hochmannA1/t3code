@@ -54,13 +54,19 @@ describe("splitSharedServerPatch", () => {
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
       enableAgentBrowserAccess: false,
+      defaultThreadEnvMode: "worktree",
+      newWorktreesStartFromOrigin: true,
     });
     expect(sharedPatch).toEqual({
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
+      newWorktreesStartFromOrigin: true,
     });
-    expect(localPatch).toEqual({ enableAgentBrowserAccess: false });
+    expect(localPatch).toEqual({
+      enableAgentBrowserAccess: false,
+      defaultThreadEnvMode: "worktree",
+    });
   });
 });
 
@@ -70,7 +76,6 @@ describe("pickSharedServerSettings", () => {
       Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
     ).toEqual([
       "continueThreadsAfterServerUpdate",
-      "defaultThreadEnvMode",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",
@@ -216,7 +221,12 @@ describe("findSharedSettingsMismatches", () => {
           environmentId: boxId,
           label: "Remote Box",
           syncEligible: true,
-          settings: { ...primarySettings, enableAgentBrowserAccess: false },
+          settings: {
+            ...primarySettings,
+            enableAgentBrowserAccess: false,
+            defaultThreadEnvMode:
+              primarySettings.defaultThreadEnvMode === "local" ? "worktree" : "local",
+          },
         },
       ],
     });

@@ -22,6 +22,8 @@ describe("fork migration namespace", () => {
           { migration_id: 45, name: "ProjectionProjectsAutoPull" },
           { migration_id: 46, name: "RepairAutomaticSettlementTimestamps" },
           { migration_id: 47, name: "ProjectionProjectIcon" },
+          { migration_id: 48, name: "ProjectionThreadBranchPullRequest" },
+          { migration_id: 49, name: "ProjectionThreadsActiveOrderKey" },
         ],
       );
       assert.deepEqual(
@@ -37,7 +39,7 @@ describe("fork migration namespace", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 
-  it.effect("adopts released 44/45 history and lets current upstream through 47 run", () =>
+  it.effect("adopts released 44/45 history and lets current upstream through 49 run", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 43 });
@@ -74,8 +76,35 @@ describe("fork migration namespace", () => {
           { migration_id: 45, name: "ProjectionProjectsAutoPull" },
           { migration_id: 46, name: "RepairAutomaticSettlementTimestamps" },
           { migration_id: 47, name: "ProjectionProjectIcon" },
+          { migration_id: 48, name: "ProjectionThreadBranchPullRequest" },
+          { migration_id: 49, name: "ProjectionThreadsActiveOrderKey" },
         ],
       );
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
+  it.effect("upgrades the installed fork through 49 without rewriting memory or fork history", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 47, toForkMigrationInclusive: 3 });
+      yield* sql`UPDATE t3_memory_state SET manifest_json = '{"preserved":true}' WHERE id = 1`;
+      const forkHistory =
+        yield* sql`SELECT * FROM effect_sql_fork_migrations ORDER BY migration_id`;
+      yield* runMigrations();
+      assert.deepEqual(
+        yield* sql`SELECT * FROM effect_sql_fork_migrations ORDER BY migration_id`,
+        forkHistory,
+      );
+      assert.deepEqual(
+        [...(yield* sql`SELECT manifest_json FROM t3_memory_state WHERE id = 1`)],
+        [{ manifest_json: '{"preserved":true}' }],
+      );
+      const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_threads)`;
+      assert.includeMembers(
+        columns.map((column) => column.name),
+        ["branch_pull_request_json", "active_order_key"],
+      );
+      assert.deepEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 
