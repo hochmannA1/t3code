@@ -1,4 +1,5 @@
 import {
+  type DeviceListInput,
   AuthAccessReadScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -84,10 +85,16 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsListStats]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSummary]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsRouting]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsRoutingIdentity]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsStack]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsLinkedThreads]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDetail]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsPreview]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsThreadComments]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDiffFileContents]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsFilesViewed]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.pullRequestsUpdate]: AuthOrchestrationOperateScope,
   [WS_METHODS.pullRequestsComment]: AuthOrchestrationOperateScope,
@@ -96,6 +103,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsReplyToThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.pullRequestsSetThreadResolution]: AuthOrchestrationOperateScope,
   [WS_METHODS.pullRequestsSetReaction]: AuthOrchestrationOperateScope,
+  [WS_METHODS.pullRequestsSetFilesViewed]: AuthOrchestrationOperateScope,
   // Read scope like the reads it un-caches: refreshing is part of reading, and a read-only
   // client pressing refresh must not be told it may not look again.
   [WS_METHODS.pullRequestsInvalidate]: AuthOrchestrationReadScope,
@@ -109,6 +117,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlCloneRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectCloneStart]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectCloneCancel]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectCloneRetry]: AuthOrchestrationOperateScope,
+  [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsListEntries]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsRefreshEntries]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsReadFile]: AuthOrchestrationReadScope,
@@ -125,6 +137,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.attachmentsDelete]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerUploadFeedback]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribeVcsStatus]: AuthOrchestrationReadScope,
+  [WS_METHODS.subscribeWorktreeSetup]: AuthOrchestrationReadScope,
+  [WS_METHODS.worktreeSetupCancel]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribeResourceTelemetry]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsRefreshStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsPull]: AuthOrchestrationOperateScope,
@@ -160,6 +174,15 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.previewAutomationFocusHost]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribePreviewEvents]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeDiscoveredLocalServers]: AuthOrchestrationReadScope,
+  [WS_METHODS.deviceConfigure]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deviceTestHost]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deviceList]: AuthOrchestrationReadScope,
+  [WS_METHODS.deviceOpen]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deviceClose]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deviceShutdown]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deviceDetail]: AuthOrchestrationReadScope,
+  [WS_METHODS.deviceAction]: AuthOrchestrationOperateScope,
+  [WS_METHODS.subscribeDeviceState]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeAuthAccess]: AuthAccessReadScope,
@@ -176,3 +199,9 @@ export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope 
   }
   return requiredScope;
 }
+
+/** Retrying can install or restart tools even though ordinary listing is readable. */
+export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironmentScope =>
+  input.retryHostId || input.updateTool
+    ? AuthOrchestrationOperateScope
+    : AuthOrchestrationReadScope;

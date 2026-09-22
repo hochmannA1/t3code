@@ -3,6 +3,7 @@ import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/unstable/http";
+import * as NetAddress from "effect/unstable/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -10,7 +11,7 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 const environmentId = EnvironmentId.make("environment-1");
 const makeFakeHttpServer = (hostname: string, port = 43123) =>
   HttpServer.HttpServer.of({
-    address: { _tag: "TcpAddress", hostname, port },
+    address: NetAddress.inetAddressFromIpStringUnsafe(hostname, port),
     serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
   });
 const fakeHttpServer = makeFakeHttpServer("127.0.0.1");
@@ -47,7 +48,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
-    expect(resolved?.capabilities).toEqual(new Set(["preview", "automations"]));
+    expect(resolved?.capabilities).toEqual(new Set(["preview", "automations", "pull-requests"]));
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
@@ -56,12 +57,42 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
+it.effect("always grants pull-requests and gates browser and device access independently", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const withPreview = yield* registry.issue({
+      threadId: ThreadId.make("thread-preview"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview"]),
+    });
+    const withoutPreview = yield* registry.issue({
+      threadId: ThreadId.make("thread-no-preview"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(),
+    });
+    const withDevice = yield* registry.issue({
+      threadId: ThreadId.make("thread-device"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["device"]),
+    });
+    const capabilitiesOf = (issued: typeof withPreview) =>
+      registry
+        .resolve(issued.config.authorizationHeader.replace(/^Bearer\s+/, ""))
+        .pipe(Effect.map((scope) => [...(scope?.capabilities ?? [])].sort()));
+
+    expect(yield* capabilitiesOf(withPreview)).toEqual(["preview", "pull-requests"]);
+    expect(yield* capabilitiesOf(withoutPreview)).toEqual(["pull-requests"]);
+    expect(yield* capabilitiesOf(withDevice)).toEqual(["device", "pull-requests"]);
+  }),
+);
+
 it.effect("builds MCP endpoints from the bound server host", () =>
   Effect.gen(function* () {
     const cases = [
       ["100.64.0.40", "http://100.64.0.40:43123/mcp"],
       ["0.0.0.0", "http://127.0.0.1:43123/mcp"],
-      ["localhost", "http://localhost:43123/mcp"],
+      ["::", "http://127.0.0.1:43123/mcp"],
+      ["::1", "http://[::1]:43123/mcp"],
       ["127.0.0.1", "http://127.0.0.1:43123/mcp"],
     ] as const;
 

@@ -62,7 +62,7 @@ describe("MemorySourceReader", () => {
           ["failed", "error"],
         ],
       );
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("paginates equal timestamps by row ID and rediscovers later finalized text", () =>
@@ -80,7 +80,7 @@ describe("MemorySourceReader", () => {
       const changed = yield* reader.discover({ at: end.at, rowId: end.rowId }, later, 10);
       assert.equal(changed[0]?.threadId, "first");
       assert.notEqual(sourceRevision(changed[0]!), sourceRevision(first));
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("selects one latest source per historical chat and reads its bounded transcript", () =>
@@ -111,7 +111,7 @@ describe("MemorySourceReader", () => {
         [at, later],
       );
       assert.equal((yield* decodeEvidenceDate(sourceText(rows[0]!))).observedAt, later);
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("waits for late assistant finalization and the configured cutoff", () =>
@@ -126,7 +126,7 @@ describe("MemorySourceReader", () => {
       const rows = yield* reader.discover({ at: "", rowId: 0 }, later, 10);
       assert.equal(rows[0]?.at, later);
       assert.equal(sourceId(rows[0]!), "late/late");
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("marks a completed source as active when its thread is running again", () =>
@@ -138,7 +138,7 @@ describe("MemorySourceReader", () => {
         VALUES ('active', 'new-turn', 'running', ${later}, '[]')`;
       const rows = yield* reader.discover({ at: "", rowId: 0 }, later, 10);
       assert.equal(rows[0]?.active, 1);
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("cannot read a deleted conversation or a cross-thread message reference", () =>
@@ -157,7 +157,7 @@ describe("MemorySourceReader", () => {
         (yield* Effect.flip(reader.projectForThread(ThreadId.make("deleted"))))._tag,
         "MemoryError",
       );
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("validates saved evidence against current project and thread existence", () =>
@@ -178,7 +178,7 @@ describe("MemorySourceReader", () => {
       yield* sql`UPDATE projection_projects SET deleted_at = ${later} WHERE project_id = 'project'`;
       assert.equal((yield* reader.validSourceIds(sources)).size, 0);
       assert.equal((yield* reader.validSourceIds([])).size, 0);
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("treats pending turns as active and ignores deleted threads", () =>
@@ -189,7 +189,7 @@ describe("MemorySourceReader", () => {
       assert.isTrue(yield* reader.hasActiveTurns());
       yield* sql`UPDATE projection_threads SET deleted_at = ${later} WHERE thread_id = 'pending'`;
       assert.isFalse(yield* reader.hasActiveTurns());
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("bounds source text while retaining the start and final conclusion", () =>
@@ -201,6 +201,6 @@ describe("MemorySourceReader", () => {
       assert.isTrue(row.assistantText.startsWith("Start"));
       assert.isTrue(row.assistantText.endsWith("Conclusion"));
       assert.include(row.assistantText, "Middle of long message omitted");
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });

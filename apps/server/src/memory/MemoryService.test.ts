@@ -152,7 +152,7 @@ const setup = (
 
 const dependencies = (settings: Parameters<typeof ServerSettings.layerTest>[0] = {}) =>
   Layer.mergeAll(
-    NodeSqliteClient.layerMemory(),
+    NodeSqliteClient.layer({ filename: ":memory:" }),
     ServerConfig.layerTest(process.cwd(), { prefix: "t3-memory-service-" }),
     ServerSettings.layerTest(settings),
   ).pipe(Layer.provideMerge(NodeServices.layer));

@@ -7,7 +7,7 @@ import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import Migration0044 from "./Fork_001_Automations.ts";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 layer("Fork_001_Automations", (it) => {
   it.effect("accepts the automation schema created by the former migration 42", () =>

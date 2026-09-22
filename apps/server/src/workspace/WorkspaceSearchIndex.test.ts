@@ -1,5 +1,6 @@
+import * as NodeModule from "node:module";
 import {
-  FileFinder,
+  type FileFinder as FileFinderType,
   type FileItem,
   type GrepCursor,
   type GrepOptions,
@@ -15,6 +16,10 @@ import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
 
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
+
+const { FileFinder } = NodeModule.createRequire(import.meta.url)(
+  "@ff-labs/fff-node",
+) as typeof import("@ff-labs/fff-node");
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -53,7 +58,7 @@ it.effect("filters image searches before applying the result limit", () =>
         destroy: vi.fn(),
         waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
         fileSearch,
-      } as unknown as FileFinder;
+      } as unknown as FileFinderType;
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
       const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project");
@@ -114,7 +119,7 @@ it.effect("waits for the full content index warmup before returning", () =>
     const finder = {
       destroy: vi.fn(),
       waitForIndexReady,
-    } as unknown as FileFinder;
+    } as unknown as FileFinderType;
     vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
     yield* Effect.scoped(WorkspaceSearchIndex.make("/workspace/project", "content"));
@@ -128,7 +133,7 @@ it.effect("preserves a full-index warmup timeout as a structured error", () =>
     const finder = {
       destroy: vi.fn(),
       waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: false })),
-    } as unknown as FileFinder;
+    } as unknown as FileFinderType;
     vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
     const error = yield* Effect.flip(
@@ -162,7 +167,7 @@ it.effect("emits entry changes for structural watcher events", () =>
           markRegistered();
           return { ok: true as const, value: unsubscribe };
         }),
-      } as unknown as FileFinder;
+      } as unknown as FileFinderType;
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
       const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project");
@@ -192,7 +197,7 @@ it.effect("preserves FileFinder destroy failures as structured defects", () =>
         throw cause;
       }),
       waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
-    } as unknown as FileFinder;
+    } as unknown as FileFinderType;
     vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
     const exit = yield* Effect.scoped(WorkspaceSearchIndex.make("/workspace/project")).pipe(
@@ -231,7 +236,7 @@ it.effect("preserves search and refresh failures with operation context", () =>
         scanFiles: vi.fn(() => {
           throw refreshCause;
         }),
-      } as unknown as FileFinder;
+      } as unknown as FileFinderType;
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
       const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project");
@@ -286,7 +291,7 @@ it.effect("keeps returned search diagnostics out of the cause chain", () =>
         waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
         mixedSearch: vi.fn(() => ({ ok: false, error: "native query rejected" })),
         scanFiles: vi.fn(() => ({ ok: false, error: "native refresh rejected" })),
-      } as unknown as FileFinder;
+      } as unknown as FileFinderType;
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
       const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project");
@@ -362,7 +367,7 @@ it.effect("continues whole-word searches after a filtered grep page", () =>
         destroy: vi.fn(),
         waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
         grep,
-      } as unknown as FileFinder;
+      } as unknown as FileFinderType;
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
       const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project", "content");

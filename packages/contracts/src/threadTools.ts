@@ -1,7 +1,7 @@
 import { MessageId, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import * as Schema from "effect/Schema";
 
-export class ThreadToolError extends Schema.TaggedErrorClass<ThreadToolError>()("ThreadToolError", {
+export class ThreadToolError extends Schema.TaggedError<ThreadToolError>()("ThreadToolError", {
   code: Schema.Literals(["access-disabled", "not-found", "query-failed"]),
   message: Schema.String,
 }) {}

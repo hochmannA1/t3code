@@ -21,12 +21,14 @@ type DraftThreadRouteState = {
 export type ThreadRouteRenderState = "loading" | "ready" | "missing" | "error";
 
 export function resolveThreadRouteRenderState(input: {
+  bootstrapComplete?: boolean;
   serverThreadShellExists: boolean;
   serverThreadDetailExists: boolean;
   serverThreadDetailDeleted: boolean;
-  serverThreadDetailError: boolean;
+  serverThreadDetailError?: boolean;
   draftThreadExists: boolean;
 }): ThreadRouteRenderState {
+  if (input.bootstrapComplete === false) return "loading";
   if (input.draftThreadExists) {
     return "ready";
   }

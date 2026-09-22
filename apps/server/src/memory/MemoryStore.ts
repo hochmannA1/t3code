@@ -45,7 +45,7 @@ const RecommendationCacheCurrent = Schema.Record(Schema.String, MemoryRecommenda
 const RecommendationCache = RecommendationCacheSource.pipe(
   Schema.decodeTo(
     RecommendationCacheCurrent,
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (cache) =>
         Effect.succeed(
           Object.fromEntries(

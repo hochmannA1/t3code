@@ -188,21 +188,30 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     const isolatedJob =
       operation === "generateMemory" || operation === "generateMemoryRecommendations";
     const settings = {
+      disableAllHooks: true,
       ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
       ...(fastMode ? { fastMode: true } : {}),
       ...(ultracode ? { ultracode: true } : {}),
       ...(isolatedJob ? { autoMemoryEnabled: false, disableAllHooks: true } : {}),
     };
-    const settingsJson =
-      Object.keys(settings).length > 0
-        ? yield* encodeJsonForOperation(
-            operation,
-            settings,
-            "Failed to encode Claude CLI settings.",
-          )
-        : undefined;
+    const settingsJson = yield* encodeJsonForOperation(
+      operation,
+      settings,
+      "Failed to encode Claude CLI settings.",
+    );
 
     const runClaudeCommand = Effect.fn("runClaudeJson.runClaudeCommand")(function* () {
+      // Titles need only the supplied prompt, not configuration from the checkout.
+      const workingDirectory =
+        operation === "generateThreadTitle"
+          ? yield* fileSystem
+              .makeTempDirectoryScoped({ prefix: "t3code-claude-title-" })
+              .pipe(
+                Effect.mapError((cause) =>
+                  normalizeCliError("claude", operation, cause, "Failed to create title directory"),
+                ),
+              )
+          : cwd;
       const spawnCommand = yield* resolveSpawnCommand(
         claudeSettings.binaryPath || "claude",
         [
@@ -214,26 +223,22 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "--model",
           resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
-          ...(settingsJson ? ["--settings", settingsJson] : []),
-          ...(isolatedJob
-            ? [
-                "--tools",
-                "",
-                "--strict-mcp-config",
-                "--mcp-config",
-                '{"mcpServers":{}}',
-                "--disable-slash-commands",
-                "--no-session-persistence",
-                "--permission-mode",
-                "dontAsk",
-              ]
-            : ["--dangerously-skip-permissions"]),
+          "--settings",
+          settingsJson,
+          // Metadata prompts need no executable capabilities, even when they contain a skill name.
+          "--tools",
+          "",
+          "--disable-slash-commands",
+          "--strict-mcp-config",
+          "--permission-mode",
+          "dontAsk",
+          ...(isolatedJob ? ["--mcp-config", '{"mcpServers":{}}', "--no-session-persistence"] : []),
         ],
         { env: claudeEnvironment },
       );
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         env: claudeEnvironment,
-        cwd,
+        cwd: workingDirectory,
         shell: spawnCommand.shell,
         stdin: {
           stream: Stream.encodeText(Stream.make(prompt)),
@@ -454,6 +459,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
         attachments: input.attachments,
       });
 
@@ -467,6 +473,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       };
     });
 

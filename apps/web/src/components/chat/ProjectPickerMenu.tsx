@@ -1,6 +1,6 @@
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { CheckIcon, FolderIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useMemo, useState } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -19,6 +19,8 @@ export interface ProjectPickerOption {
   readonly ref: ScopedProjectRef;
   readonly value: string;
   readonly label: string;
+  readonly icon?: ReactNode;
+  readonly badge?: ReactNode;
 }
 
 export function filterProjectPickerOptions(
@@ -76,8 +78,9 @@ export function ProjectPickerMenu({
             {filteredOptions.map((option) => (
               <MenuRadioItem key={option.value} value={option.value} closeOnClick>
                 <span className="flex min-w-0 items-center gap-2">
-                  <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                  {option.icon ?? <FolderIcon className="size-4 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  {option.badge}
                   {option.value === activeValue ? (
                     <CheckIcon className="size-4 shrink-0 text-foreground" />
                   ) : null}

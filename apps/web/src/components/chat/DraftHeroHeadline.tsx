@@ -1,5 +1,5 @@
 import type { DraftId } from "~/composerDraftStore";
-import type { ScopedProjectRef } from "@t3tools/contracts";
+import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import { ChevronDownIcon, FolderIcon } from "lucide-react";
@@ -11,9 +11,12 @@ import { selectProjectGroupingSettings } from "~/logicalProject";
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
+  projectGroupsSpanEnvironments,
 } from "~/sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
+import { ProjectFavicon } from "../ProjectFavicon";
 import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
 import { ProjectPickerMenu } from "./ProjectPickerMenu";
 
@@ -65,6 +68,26 @@ export function DraftHeroHeadline({
       threads,
     ],
   );
+  // Same-named projects on two machines are only told apart by where they
+  // live, so rows on another machine carry its icon once the catalog spans
+  // more than one environment; a single-machine catalog stays as it was.
+  const showProjectEnvironments = useMemo(
+    () => projectGroupsSpanEnvironments(projectGroups),
+    [projectGroups],
+  );
+  const environmentMachineById = useMemo(
+    () =>
+      new Map(
+        environments.map(
+          (environment) =>
+            [
+              environment.environmentId,
+              resolveEnvironmentMachineKind(environment.serverConfig),
+            ] as const,
+        ),
+      ),
+    [environments],
+  );
   const projectPickerEntries = useMemo(
     () =>
       buildSidebarProjectPickerEntries({
@@ -90,6 +113,14 @@ export function DraftHeroHeadline({
     ref: scopeProjectRef(targetProject.environmentId, targetProject.id),
     value: group.projectKey,
     label: group.displayName,
+    icon: <ProjectFavicon project={group} className="size-4 shrink-0" />,
+    badge: showProjectEnvironments ? (
+      <ProjectEnvironmentBadge
+        group={group}
+        primaryEnvironmentId={primaryEnvironmentId}
+        machineByEnvironmentId={environmentMachineById}
+      />
+    ) : null,
   }));
   const selectProject = (projectRef: ScopedProjectRef | null) => {
     if (
@@ -126,8 +157,20 @@ export function DraftHeroHeadline({
     />
   );
 
+  // The composer hero is a sentence, so the heading's accessible name must be
+  // a complete sentence too. The project picker is a control rendered inline
+  // in the h1; without an explicit label its widget state bleeds into the
+  // announced phrase.
+  const headingLabel =
+    activeProjectRef !== null && activeProjectDisplayName !== null
+      ? `What should we work on in ${activeProjectDisplayName}?`
+      : "What should we work on?";
+
   return (
-    <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
+    <h1
+      aria-label={headingLabel}
+      className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
+    >
       {activeProjectRef !== null && activeProjectDisplayName !== null ? (
         <>What should we work on in {projectSelector}?</>
       ) : (

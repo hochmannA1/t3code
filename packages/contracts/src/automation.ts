@@ -180,7 +180,7 @@ export const AutomationErrorCode = Schema.Literals([
 ]);
 export type AutomationErrorCode = typeof AutomationErrorCode.Type;
 
-export class AutomationError extends Schema.TaggedErrorClass<AutomationError>()("AutomationError", {
+export class AutomationError extends Schema.TaggedError<AutomationError>()("AutomationError", {
   code: AutomationErrorCode,
   message: TrimmedNonEmptyString,
   cause: Schema.optional(Schema.Defect()),

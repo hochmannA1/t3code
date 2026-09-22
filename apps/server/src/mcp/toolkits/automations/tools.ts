@@ -54,7 +54,7 @@ export const AutomationListTool = readonlyTool(
   Tool.make("automation_list", {
     description:
       "List scheduled prompt automations for this task's project. Results never include automations from another project.",
-    parameters: Schema.Struct({}),
+    parameters: Schema.Record(Schema.String, Schema.Never),
     success: AutomationListResult,
     failure: AutomationError,
     dependencies,

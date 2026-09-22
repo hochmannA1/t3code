@@ -24,6 +24,10 @@ describe("fork migration namespace", () => {
           { migration_id: 47, name: "ProjectionProjectIcon" },
           { migration_id: 48, name: "ProjectionThreadBranchPullRequest" },
           { migration_id: 49, name: "ProjectionThreadsActiveOrderKey" },
+          { migration_id: 50, name: "ProjectionThreadPullRequests" },
+          { migration_id: 51, name: "ProjectionThreadMessageContext" },
+          { migration_id: 52, name: "ProjectionThreadTitleState" },
+          { migration_id: 53, name: "PullRequestFilesViewed" },
         ],
       );
       assert.deepEqual(
@@ -36,10 +40,10 @@ describe("fork migration namespace", () => {
         ],
       );
       assert.deepEqual(yield* runMigrations({ toForkMigrationInclusive: 2 }), []);
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("adopts released 44/45 history and lets current upstream through 49 run", () =>
+  it.effect("adopts released 44/45 history and lets current upstream through 53 run", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 43 });
@@ -78,15 +82,19 @@ describe("fork migration namespace", () => {
           { migration_id: 47, name: "ProjectionProjectIcon" },
           { migration_id: 48, name: "ProjectionThreadBranchPullRequest" },
           { migration_id: 49, name: "ProjectionThreadsActiveOrderKey" },
+          { migration_id: 50, name: "ProjectionThreadPullRequests" },
+          { migration_id: 51, name: "ProjectionThreadMessageContext" },
+          { migration_id: 52, name: "ProjectionThreadTitleState" },
+          { migration_id: 53, name: "PullRequestFilesViewed" },
         ],
       );
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("upgrades the installed fork through 49 without rewriting memory or fork history", () =>
+  it.effect("upgrades the installed fork through 53 without rewriting memory or fork history", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 47, toForkMigrationInclusive: 3 });
+      yield* runMigrations({ toMigrationInclusive: 49, toForkMigrationInclusive: 3 });
       yield* sql`UPDATE t3_memory_state SET manifest_json = '{"preserved":true}' WHERE id = 1`;
       const forkHistory =
         yield* sql`SELECT * FROM effect_sql_fork_migrations ORDER BY migration_id`;
@@ -104,8 +112,15 @@ describe("fork migration namespace", () => {
         columns.map((column) => column.name),
         ["branch_pull_request_json", "active_order_key"],
       );
+      const messageColumns = yield* sql<{
+        readonly name: string;
+      }>`PRAGMA table_info(projection_thread_messages)`;
+      assert.include(
+        messageColumns.map((column) => column.name),
+        "context_json",
+      );
       assert.deepEqual(yield* runMigrations(), []);
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("repairs the earlier migration 42 collision below the upstream watermark", () =>
@@ -134,7 +149,7 @@ describe("fork migration namespace", () => {
         [...(yield* sql`SELECT name FROM effect_sql_fork_migrations WHERE migration_id = 1`)],
         [{ name: "Automations" }],
       );
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("rolls back adoption when an existing fork ledger conflicts", () =>
@@ -150,6 +165,6 @@ describe("fork migration namespace", () => {
         [...(yield* sql`SELECT name FROM effect_sql_migrations WHERE migration_id = 44`)],
         [{ name: "Automations" }],
       );
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });

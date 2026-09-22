@@ -118,6 +118,6 @@ export const MemorySetThreadPolicyInput = Schema.Struct({
   generateMemories: Schema.Boolean,
 });
 export type MemorySetThreadPolicyInput = typeof MemorySetThreadPolicyInput.Type;
-export class MemoryError extends Schema.TaggedErrorClass<MemoryError>()("MemoryError", {
+export class MemoryError extends Schema.TaggedError<MemoryError>()("MemoryError", {
   message: Schema.String,
 }) {}

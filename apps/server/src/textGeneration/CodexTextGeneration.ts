@@ -20,6 +20,7 @@ import {
   type CodexSettings,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
   type ModelSelection,
+  type ServerProviderModel,
   TextGenerationError,
 } from "@t3tools/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
@@ -43,7 +44,7 @@ import {
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { codexModelFamily, getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 
 const CODEX_TIMEOUT_MS = 180_000;
@@ -93,6 +94,7 @@ const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknow
 export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(function* (
   codexConfig: CodexSettings,
   environment?: NodeJS.ProcessEnv,
+  getModels: Effect.Effect<ReadonlyArray<ServerProviderModel>> = Effect.succeed([]),
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -231,6 +233,14 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     const outputPath = yield* writeTempFile(operation, "codex-output", "");
 
     const runCodexCommand = Effect.fn("runCodexJson.runCodexCommand")(function* () {
+      const models = yield* getModels;
+      const requestedModel = modelSelection.model;
+      const model =
+        models.find((candidate) => candidate.slug === requestedModel)?.slug ??
+        models.find(
+          (candidate) => !candidate.isCustom && codexModelFamily(candidate.slug) === requestedModel,
+        )?.slug ??
+        requestedModel;
       const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
       const isolatedJob =
         operation === "generateMemory" || operation === "generateMemoryRecommendations";
@@ -340,7 +350,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
             ? [...MEMORY_CODEX_CONFIG.flatMap((value) => ["--config", value]), ...memoryMcpConfig]
             : []),
           "--model",
-          modelSelection.model,
+          model,
           "--config",
           `model_reasoning_effort="${reasoningEffort}"`,
           ...(serviceTier ? ["--config", `service_tier="${serviceTier}"`] : []),
@@ -560,6 +570,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
         attachments: input.attachments,
       });
 
@@ -574,6 +585,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
