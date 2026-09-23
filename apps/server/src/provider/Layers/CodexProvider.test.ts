@@ -118,6 +118,22 @@ it("marks the most preferred available model as default", () => {
   );
 });
 
+it("prefers GPT-6 Sol over older Codex models when available", () => {
+  const models = applyPreferredCodexDefaultModel([
+    { slug: "gpt-5.6-sol", name: "GPT-5.6-Sol", isCustom: false, capabilities: null },
+    { slug: "gpt-6-sol", name: "GPT-6-Sol", isCustom: false, capabilities: null },
+    {
+      slug: "gpt-6-astra",
+      name: "GPT-6-Astra",
+      isCustom: false,
+      isDefault: true,
+      capabilities: null,
+    },
+  ]);
+
+  assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-6-sol");
+});
+
 it("prefers sol over terra when both are available", () => {
   const models = applyPreferredCodexDefaultModel([
     { slug: "gpt-5.6-terra", name: "GPT-5.6-Terra", isCustom: false, capabilities: null },

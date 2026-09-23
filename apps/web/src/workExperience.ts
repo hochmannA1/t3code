@@ -66,13 +66,13 @@ export const WORK_COMPLEXITY_OPTIONS: ReadonlyArray<{
 
 interface WorkModelPreset {
   readonly model: string;
-  readonly reasoningEffort: "low" | "high";
+  readonly reasoningEffort: "medium" | "high" | "xhigh";
 }
 
 export const WORK_MODEL_PRESETS: Readonly<Record<WorkComplexity, WorkModelPreset>> = {
-  simple: { model: "gpt-5.6-luna", reasoningEffort: "high" },
-  normal: { model: "gpt-5.6-sol", reasoningEffort: "low" },
-  hard: { model: "gpt-5.6-sol", reasoningEffort: "high" },
+  simple: { model: "gpt-6-luna", reasoningEffort: "high" },
+  normal: { model: "gpt-6-sol", reasoningEffort: "medium" },
+  hard: { model: "gpt-6-sol", reasoningEffort: "xhigh" },
 };
 
 export function resolveWorkCodexInstance(

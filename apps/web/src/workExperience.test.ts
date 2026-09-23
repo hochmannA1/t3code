@@ -40,9 +40,9 @@ describe("Work model presets", () => {
   });
 
   it.each<[WorkComplexity, string, string]>([
-    ["simple", "gpt-5.6-luna", "high"],
-    ["normal", "gpt-5.6-sol", "low"],
-    ["hard", "gpt-5.6-sol", "high"],
+    ["simple", "gpt-6-luna", "high"],
+    ["normal", "gpt-6-sol", "medium"],
+    ["hard", "gpt-6-sol", "xhigh"],
   ])("maps %s work to its Codex selection", (complexity, model, reasoningEffort) => {
     expect(WORK_MODEL_PRESETS[complexity]).toEqual({ model, reasoningEffort });
     expect(createWorkModelSelection(complexity)).toEqual({
