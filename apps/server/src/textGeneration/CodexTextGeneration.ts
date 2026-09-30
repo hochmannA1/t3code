@@ -95,6 +95,11 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
   codexConfig: CodexSettings,
   environment?: NodeJS.ProcessEnv,
   getModels: Effect.Effect<ReadonlyArray<ServerProviderModel>> = Effect.succeed([]),
+  resolveRuntime?: Effect.Effect<
+    import("../provider/CodexManagedRuntime.ts").CodexEffectiveRuntime,
+    import("@t3tools/contracts").ProviderSetupError,
+    Scope.Scope
+  >,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -143,7 +148,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       );
 
   const safeUnlink = (filePath: string): Effect.Effect<void, never> =>
-    fileSystem.remove(filePath).pipe(Effect.catch(() => Effect.void));
+    fileSystem.remove(filePath).pipe(Effect.ignore);
 
   const encodeJsonForOperation = (
     operation:
@@ -233,6 +238,15 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     const outputPath = yield* writeTempFile(operation, "codex-output", "");
 
     const runCodexCommand = Effect.fn("runCodexJson.runCodexCommand")(function* () {
+      const resolved = resolveRuntime
+        ? yield* resolveRuntime.pipe(
+            Effect.mapError(
+              (cause) => new TextGenerationError({ operation, detail: cause.detail }),
+            ),
+          )
+        : undefined;
+      const effectiveConfig = resolved?.config ?? codexConfig;
+      const effectiveEnvironment = resolved?.environment ?? resolvedEnvironment;
       const models = yield* getModels;
       const requestedModel = modelSelection.model;
       const model =
@@ -241,7 +255,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           (candidate) => !candidate.isCustom && codexModelFamily(candidate.slug) === requestedModel,
         )?.slug ??
         requestedModel;
-      const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
+      const launchArgs = resolveCodexLaunchArgs(effectiveConfig.launchArgs, effectiveEnvironment);
       const isolatedJob =
         operation === "generateMemory" || operation === "generateMemoryRecommendations";
       const commandCwd = isolatedJob
@@ -257,8 +271,10 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           )
         : cwd;
       const commandEnv = {
-        ...resolvedEnvironment,
-        ...(codexConfig.homePath ? { CODEX_HOME: expandHomePath(codexConfig.homePath) } : {}),
+        ...effectiveEnvironment,
+        ...(effectiveConfig.homePath
+          ? { CODEX_HOME: expandHomePath(effectiveConfig.homePath) }
+          : {}),
       };
       // Empty config tables merge with inherited tables. Enumerate names so each configured
       // MCP server is explicitly disabled while retaining provider and Azure auth settings.
@@ -267,7 +283,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       let memoryMcpConfig: string[] = [];
       if (isolatedJob) {
         const listSpawn = yield* resolveSpawnCommand(
-          codexConfig.binaryPath || "codex",
+          effectiveConfig.binaryPath || "codex",
           [
             "mcp",
             "list",
@@ -336,9 +352,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       const reasoningEffort =
         getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
         DEFAULT_TEXT_GENERATION_REASONING_EFFORT;
-      const serviceTier = getCodexServiceTierOptionValue(modelSelection);
+      const serviceTier = resolved ? undefined : getCodexServiceTierOptionValue(modelSelection);
       const spawnCommand = yield* resolveSpawnCommand(
-        codexConfig.binaryPath || "codex",
+        effectiveConfig.binaryPath || "codex",
         [
           "exec",
           ...codexExecLaunchArgs(launchArgs),
@@ -361,7 +377,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           ...imagePaths.flatMap((imagePath) => ["--image", imagePath]),
           "-",
         ],
-        { env: resolvedEnvironment },
+        { env: effectiveEnvironment },
       );
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         env: commandEnv,
@@ -408,8 +424,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       }
     });
 
-    const cleanup = Effect.all(
-      [schemaPath, outputPath, ...cleanupPaths].map((filePath) => safeUnlink(filePath)),
+    const cleanup = Effect.forEach(
+      [schemaPath, outputPath, ...cleanupPaths],
+      (filePath) => safeUnlink(filePath),
       {
         concurrency: "unbounded",
       },

@@ -19,8 +19,7 @@ Attach up to 100 files per message. Each image can be up to 10 MiB, with at most
 50 MiB each, subject to the environment's upload support and limit. The agent
 receives them on the environment's machine. Provider and model limits still
 apply, including images already in the conversation. A video attachment gives
-the agent a file path; it does not enable native video input. Antigravity does
-not accept video attachments.
+the agent a file path; it does not enable native video input.
 
 Uploads begin when you add an attachment. All uploads must finish before the
 message can send. Retry or remove a failed upload. On web and desktop, reloading
@@ -37,7 +36,7 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 On web and desktop, a message sent during a running turn waits at the end of the conversation as a
 dashed bubble. It goes out on its own when the agent finishes its next tool
-call, or when the turn ends. Use the arrow under the bubble to send it right
+call, or when the turn ends, even while you have another thread open. Use the arrow under the bubble to send it right
 away, or the X to move it back into the composer. Stop returns every queued
 message to the composer.
 
@@ -235,6 +234,7 @@ automatically. HTML previews cannot access your T3 Code session.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens a compatible installed file viewer.
+
 ## Downloading files
 
 On web and desktop, use the download action beside a file link in chat to save it to your device. You can also right-click a file in the file browser and choose **Download**, or choose **Download as ZIP** for a folder. Folder downloads include nested files and empty folders, but skip symbolic links. Downloads come from the connected environment, including remote environments.

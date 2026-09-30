@@ -51,21 +51,19 @@ export function WorkComplexityControl({
       <PopoverTrigger
         disabled={disabled}
         aria-label={`${ariaLabel}: ${selectedLabel}`}
-        className={cn(
-          "group -ms-2 inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-secondary-label outline-none transition-colors hover:bg-input/45 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-64",
-          className,
-        )}
+        render={
+          <button
+            className={cn(
+              "group -ms-2 inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-secondary-label outline-none transition-colors hover:bg-input/45 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-64",
+              className,
+            )}
+          />
+        }
       >
         <span>{selectedLabel}</span>
         <ChevronDownIcon className="size-4 transition-transform group-data-popup-open:rotate-180" />
       </PopoverTrigger>
-      <PopoverPopup
-        side="top"
-        align="start"
-        sideOffset={8}
-        className="w-80 rounded-2xl"
-        viewportClassName="p-4"
-      >
+      <PopoverPopup side="top" align="start" sideOffset={8} width="md">
         <div className="px-1 pt-1">
           <div className="relative h-9">
             <div
@@ -75,7 +73,7 @@ export function WorkComplexityControl({
               <span
                 className={cn(
                   "block h-full rounded-full bg-foreground/80",
-                  !dragging && "transition-[width] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]",
+                  !dragging && "transition-[width] duration-300 ease-out",
                 )}
                 style={{ width: `${progress}%` }}
               />
@@ -94,10 +92,8 @@ export function WorkComplexityControl({
             <span
               aria-hidden
               className={cn(
-                "pointer-events-none absolute top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-[0_1px_5px_rgb(0_0_0/0.3)]",
-                dragging
-                  ? "scale-110"
-                  : "transition-[left,scale] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]",
+                "pointer-events-none absolute top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-sm",
+                dragging ? "scale-110" : "transition-[left,scale] duration-300 ease-out",
               )}
               style={{ left: SLIDER_POSITIONS[previewIndex] }}
             />

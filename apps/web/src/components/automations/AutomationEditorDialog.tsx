@@ -370,7 +370,7 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
             Describe the recurring work. The settings on the right control when and where it runs.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="flex flex-col gap-5">
+        <DialogPanel className="flex flex-col">
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(17rem,0.85fr)]">
             <section className="min-w-0">
               <Field>
@@ -379,7 +379,7 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
                   value={prompt}
                   onChange={(event) => setPrompt(event.currentTarget.value)}
                   placeholder="Review the latest project state and tell me what needs attention."
-                  className="min-h-64 resize-y text-base leading-relaxed"
+                  className="min-h-64 resize-y "
                   autoFocus
                 />
                 <FieldDescription>
@@ -661,7 +661,7 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
                           lockedProvider={null}
                           instanceEntries={entries}
                           modelOptionsByInstance={modelOptionsByInstance}
-                          triggerVariant="outline"
+
                           triggerAriaLabel="Automation model"
                           onInstanceModelChange={(instanceId, model) =>
                             setModelSelection({
@@ -683,7 +683,7 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
                           modelOptions={modelSelection.options}
                           allowPromptInjectedEffort={false}
                           planModeEnabled={settings.planModeEnabled}
-                          triggerVariant="outline"
+
                           onModelOptionsChange={(options) =>
                             setModelSelection({
                               instanceId: modelSelection.instanceId,
@@ -738,7 +738,6 @@ export function AutomationEditorDialog(props: AutomationEditorDialogProps) {
                             )
                           }
                           placeholder="0 9 * * 1-5"
-                          className="font-mono"
                         />
                         <FieldDescription>Minute, hour, day, month, weekday.</FieldDescription>
                       </Field>

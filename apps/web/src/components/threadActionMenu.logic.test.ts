@@ -7,11 +7,18 @@ const baseState: ThreadActionMenuState = {
   projectFilter: null,
   isPinned: false,
   isSettled: false,
+  autoSettleEnabled: true,
   isSnoozed: false,
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
-  supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true },
+  supports: {
+    settlement: true,
+    autoSettleOptOut: true,
+    snooze: true,
+    pinning: true,
+    titleRegeneration: true,
+  },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
   ],
@@ -32,7 +39,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       ids({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          autoSettleOptOut: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+        },
       }),
     ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
   });
@@ -66,7 +79,7 @@ describe("buildThreadActionMenuItems", () => {
     const filterIndex = items.findIndex((candidate) => candidate.id === "filter-by-project");
     expect(items[filterIndex]).toMatchObject({ label: "Show all projects", icon: "folder-tree" });
     expect(items[filterIndex - 1]?.id).toBe("mark-unread");
-    expect(items[filterIndex + 1]?.id).toBe("copy");
+    expect(items[filterIndex + 1]?.id).toBe("auto-settle");
   });
 
   it("includes branch items only for threads with a branch", () => {
@@ -131,7 +144,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       ids({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          autoSettleOptOut: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+        },
       }),
     ).toContain("archive");
   });

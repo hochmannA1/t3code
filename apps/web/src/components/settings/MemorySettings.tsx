@@ -144,7 +144,7 @@ function EnvironmentMemorySettings({ environment }: { environment: EnvironmentPr
             lockedProvider={null}
             instanceEntries={instanceEntries}
             modelOptionsByInstance={modelOptionsByInstance}
-            triggerVariant="outline"
+
             triggerAriaLabel="Memory model"
             onInstanceModelChange={(instanceId, model) =>
               write({ modelSelection: createModelSelection(instanceId, model) })

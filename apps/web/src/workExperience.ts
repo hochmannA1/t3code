@@ -71,8 +71,8 @@ interface WorkModelPreset {
 
 export const WORK_MODEL_PRESETS: Readonly<Record<WorkComplexity, WorkModelPreset>> = {
   simple: { model: "gpt-6-luna", reasoningEffort: "high" },
-  normal: { model: "gpt-6-sol", reasoningEffort: "medium" },
-  hard: { model: "gpt-6-sol", reasoningEffort: "xhigh" },
+  normal: { model: "gpt-6.1-sol", reasoningEffort: "medium" },
+  hard: { model: "gpt-6.1-sol", reasoningEffort: "xhigh" },
 };
 
 export function resolveWorkCodexInstance(
