@@ -23,5 +23,6 @@ interface ImportMeta {
 declare global {
   interface Window {
     desktopBridge?: DesktopBridge;
+    __KARA_T3_BASE_PATH__?: string;
   }
 }

@@ -25,6 +25,7 @@ import {
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import {
   BearerConnectionTarget,
+  CookieConnectionTarget,
   ConnectionTransientError,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
@@ -79,8 +80,10 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly authorizeBearer?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeBearer"];
   readonly authorizeDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpop"];
   readonly primaryBearerToken?: string;
+  readonly primaryBearerTokenEffect?: Effect.Effect<Option.Option<string>>;
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
   readonly descriptorProtocolVersion?: number | null | undefined;
+  readonly descriptorEnvironmentId?: EnvironmentId;
 }) => {
   const profiles = new Map(
     (options?.profiles ?? []).map((profile) => [profile.connectionId, profile]),
@@ -149,7 +152,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     RpcHttp.layerRemoteHttpClient((() =>
       Promise.resolve(
         Response.json({
-          environmentId: ENVIRONMENT_ID,
+          environmentId: options?.descriptorEnvironmentId ?? ENVIRONMENT_ID,
           label: "Compatible environment",
           platform: { os: "linux", arch: "x64" },
           serverVersion: "0.0.0-test",
@@ -169,7 +172,9 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(
       ClientCapabilities.PrimaryEnvironmentAuth,
       ClientCapabilities.PrimaryEnvironmentAuth.of({
-        bearerToken: Effect.succeed(Option.fromNullishOr(options?.primaryBearerToken)),
+        bearerToken:
+          options?.primaryBearerTokenEffect ??
+          Effect.succeed(Option.fromNullishOr(options?.primaryBearerToken)),
       }),
     ),
     Layer.succeed(
@@ -245,6 +250,112 @@ describe("ConnectionResolver", () => {
         httpAuthorization: null,
         target,
       });
+    }),
+  );
+
+  it.effect(
+    "prepares shared projects with cookies and does not read the primary bearer token",
+    () =>
+      Effect.gen(function* () {
+        const bearerReads = yield* Ref.make(0);
+        const target = new CookieConnectionTarget({
+          environmentId: EnvironmentId.make("kara-share:11111111-1111-4111-8111-111111111111"),
+          label: "Shared project",
+          shareId: "11111111-1111-4111-8111-111111111111",
+          role: "read",
+          version: "2",
+          httpBaseUrl:
+            "https://kara.example/agents/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+          wsBaseUrl:
+            "wss://kara.example/agents/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+        });
+        const layerBroker = yield* makeDependencies({
+          descriptorEnvironmentId: target.environmentId,
+          primaryBearerTokenEffect: Ref.update(bearerReads, (reads) => reads + 1).pipe(
+            Effect.as(Option.some("primary-bearer-must-not-be-used")),
+          ),
+        });
+        const broker = yield* ConnectionResolver.ConnectionResolver.pipe(
+          Effect.provide(layerBroker),
+        );
+
+        const prepared = yield* broker.prepare(catalogEntry(target));
+
+        expect(prepared).toMatchObject({
+          httpBaseUrl: target.httpBaseUrl,
+          socketUrl:
+            "wss://kara.example/agents/shared-projects/11111111-1111-4111-8111-111111111111/t3/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct&orchestrationProtocol=2",
+          httpAuthorization: null,
+          target,
+        });
+        expect(yield* Ref.get(bearerReads)).toBe(0);
+      }),
+  );
+
+  it.effect("keeps an existing WebSocket endpoint suffix exactly once", () =>
+    Effect.gen(function* () {
+      const target = new CookieConnectionTarget({
+        environmentId: EnvironmentId.make("kara-share:11111111-1111-4111-8111-111111111111"),
+        label: "Shared project",
+        shareId: "11111111-1111-4111-8111-111111111111",
+        role: "edit",
+        version: "1",
+        httpBaseUrl: "https://kara.example/agents/share/t3/ws/",
+        wsBaseUrl: "wss://kara.example/agents/share/t3/ws/",
+      });
+      const layerBroker = yield* makeDependencies({
+        descriptorEnvironmentId: target.environmentId,
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
+
+      expect(yield* broker.prepare(catalogEntry(target))).toMatchObject({
+        socketUrl:
+          "wss://kara.example/agents/share/t3/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct&orchestrationProtocol=2",
+      });
+    }),
+  );
+
+  it.effect.each([
+    {
+      httpBaseUrl: "https://kara.example/agents/share/t3/",
+      wsBaseUrl: "ws://kara.example/agents/share/t3/",
+    },
+    {
+      httpBaseUrl: "https://kara.example/agents/share/t3/",
+      wsBaseUrl: "wss://other.example/agents/share/t3/",
+    },
+    {
+      httpBaseUrl: "https://kara.example/agents/share/t3/",
+      wsBaseUrl: "wss://kara.example/agents/other/t3/",
+    },
+    {
+      httpBaseUrl: "https://user@kara.example/agents/share/t3/",
+      wsBaseUrl: "wss://kara.example/agents/share/t3/",
+    },
+    {
+      httpBaseUrl: "https://kara.example/agents/share/t3/?token=secret",
+      wsBaseUrl: "wss://kara.example/agents/share/t3/",
+    },
+    {
+      httpBaseUrl: "https://kara.example/agents/share/t3/",
+      wsBaseUrl: "wss://kara.example/agents/share/t3/#fragment",
+    },
+  ])("blocks mismatched or credential-bearing shared URLs", ({ httpBaseUrl, wsBaseUrl }) =>
+    Effect.gen(function* () {
+      const target = new CookieConnectionTarget({
+        environmentId: EnvironmentId.make("kara-share:11111111-1111-4111-8111-111111111111"),
+        label: "Shared project",
+        shareId: "11111111-1111-4111-8111-111111111111",
+        role: "read",
+        version: "1",
+        httpBaseUrl,
+        wsBaseUrl,
+      });
+      const layerBroker = yield* makeDependencies();
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
+      const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
+
+      expect(error).toMatchObject({ _tag: "ConnectionBlockedError", reason: "configuration" });
     }),
   );
 

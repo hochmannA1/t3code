@@ -95,6 +95,7 @@ export function presentEnvironmentConnection(
 export function connectionCatalogDisplayUrl(entry: ConnectionCatalogEntry): string | null {
   switch (entry.target._tag) {
     case "PrimaryConnectionTarget":
+    case "CookieConnectionTarget":
       return entry.target.httpBaseUrl;
     case "RelayConnectionTarget":
       return null;

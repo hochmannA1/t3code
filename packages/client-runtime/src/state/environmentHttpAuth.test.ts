@@ -24,6 +24,7 @@ import type { HttpClient } from "effect/http";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import {
   ConnectionTransientError,
+  CookieConnectionTarget,
   RelayConnectionTarget,
   type PreparedConnection,
   type PreparedHttpAuthorization,
@@ -286,6 +287,56 @@ describe("authenticated environment HTTP requests", () => {
         expect(url.searchParams.get("cursor")).toBe("older-page");
       }
       expect(PREPARED.httpAuthorization).toMatchObject({ accessToken: "expired-token" });
+    }),
+  );
+
+  it.effect("preserves the mounted path prefix for cookie-auth RPC and thread history", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness((requestNumber) =>
+        Response.json(requestNumber === 1 ? SHELL : THREAD_HISTORY),
+      );
+      const target = new CookieConnectionTarget({
+        environmentId: EnvironmentId.make("kara-share:11111111-1111-4111-8111-111111111111"),
+        label: "Shared project",
+        shareId: "11111111-1111-4111-8111-111111111111",
+        role: "read",
+        version: "1",
+        httpBaseUrl:
+          "https://current.example.test/agents/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+        wsBaseUrl:
+          "wss://current.example.test/agents/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+      });
+      const prepared: PreparedConnection = {
+        ...PREPARED,
+        environmentId: target.environmentId,
+        label: target.label,
+        httpBaseUrl: target.httpBaseUrl,
+        httpAuthorization: null,
+        target,
+      };
+      const result = yield* fetchEnvironmentShellSnapshot({
+        ...harness.input,
+        prepared,
+      }).pipe(Effect.provide(harness.httpLayer));
+
+      expect(result).toEqual(SHELL);
+      const history = yield* fetchEnvironmentThreadHistoryPage({
+        ...harness.input,
+        prepared,
+        threadId: THREAD.projection.thread.id,
+        cursor: "older-page",
+      }).pipe(Effect.provide(harness.httpLayer));
+
+      expect(history).toEqual(THREAD_HISTORY);
+      expect(harness.calls.map((call) => call.url)).toEqual([
+        `${target.httpBaseUrl}api/orchestration/shell`,
+        `${target.httpBaseUrl}api/orchestration/threads/${THREAD.projection.thread.id}/history?cursor=older-page`,
+      ]);
+      expect(harness.calls.map((call) => call.init.credentials)).toEqual(["include", "include"]);
+      expect(
+        harness.calls.map((call) => new Headers(call.init.headers).get("authorization")),
+      ).toEqual([null, null]);
+      expect(harness.authorizations).toEqual([]);
     }),
   );
 

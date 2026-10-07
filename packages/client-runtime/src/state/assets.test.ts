@@ -22,6 +22,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import {
   AVAILABLE_CONNECTION_STATE,
+  CookieConnectionTarget,
   PrimaryConnectionTarget,
   type PreparedConnection,
   type SupervisorConnectionState,
@@ -34,8 +35,35 @@ import {
   createAssetEnvironmentAtoms,
   createProjectFaviconUrlAtomFamily,
   InvalidAssetCollectionKeyError,
+  resolveAssetUrl,
   parseAssetCollectionKey,
 } from "./assets.ts";
+
+describe("asset URL resolution", () => {
+  it("prefixes only root-relative and local-relative asset paths", () => {
+    const base = "https://kara.example/agents/shared-projects/share/t3/";
+    expect(resolveAssetUrl(base, "/api/assets/image?signature=abc")).toBe(
+      "https://kara.example/agents/shared-projects/share/t3/api/assets/image?signature=abc",
+    );
+    expect(resolveAssetUrl(base, "api/assets/image")).toBe(
+      "https://kara.example/agents/shared-projects/share/t3/api/assets/image",
+    );
+    expect(resolveAssetUrl(base, "/agents/shared-projects/share/t3/api/assets/image")).toBe(
+      "https://kara.example/agents/shared-projects/share/t3/api/assets/image",
+    );
+  });
+
+  it("leaves absolute and protocol-relative URLs on their original mount and origin", () => {
+    const base = "https://kara.example/agents/shared-projects/share/t3/";
+    expect(resolveAssetUrl(base, "https://kara.example/other-mount/image.png")).toBe(
+      "https://kara.example/other-mount/image.png",
+    );
+    expect(resolveAssetUrl(base, "https://assets.example/image.png")).toBe(
+      "https://assets.example/image.png",
+    );
+    expect(resolveAssetUrl(base, "//assets.example/image.png")).toBe("//assets.example/image.png");
+  });
+});
 
 describe("asset collection keys", () => {
   it("preserves malformed JSON and its native cause", () => {
@@ -71,6 +99,7 @@ describe("createAssetEnvironmentAtoms", () => {
     { name: "no primary", path: "/tmp/clip.mp4", primary: "none" },
     { name: "primary reconnect", path: "/tmp/frame.png", primary: "reconnecting" },
     { name: "same environment", path: "/tmp/clip.mp4", primary: "same" },
+    { name: "shared project", path: "/tmp/clip.mp4", shared: true },
     { name: "non-media", path: "/tmp/report.html" },
     { name: "authorization failure", path: "/tmp/clip.mp4", error: "auth" },
   ])("uses the correct environment for $name", (scenario) =>
@@ -114,12 +143,25 @@ describe("createAssetEnvironmentAtoms", () => {
         supervisors.set(
           environmentId,
           EnvironmentSupervisor.EnvironmentSupervisor.of({
-            target: new PrimaryConnectionTarget({
-              environmentId,
-              label: environmentId,
-              httpBaseUrl: `https://${environmentId}.test`,
-              wsBaseUrl: `wss://${environmentId}.test`,
-            }),
+            target:
+              scenario.shared && environmentId === remoteId
+                ? new CookieConnectionTarget({
+                    environmentId,
+                    label: "Shared project",
+                    shareId: "11111111-1111-4111-8111-111111111111",
+                    role: "read",
+                    version: "1",
+                    httpBaseUrl:
+                      "https://kara.example/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+                    wsBaseUrl:
+                      "wss://kara.example/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+                  })
+                : new PrimaryConnectionTarget({
+                    environmentId,
+                    label: environmentId,
+                    httpBaseUrl: `https://${environmentId}.test`,
+                    wsBaseUrl: `wss://${environmentId}.test`,
+                  }),
             state: yield* SubscriptionRef.make<SupervisorConnectionState>({
               ...AVAILABLE_CONNECTION_STATE,
               phase: "connected" as const,

@@ -15,6 +15,7 @@ import {
 } from "../connection/catalog.ts";
 import {
   BearerConnectionTarget,
+  CookieConnectionTarget,
   ConnectionTransientError,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
@@ -337,6 +338,25 @@ describe("ConnectionCatalogDocument", () => {
 
     expect(putRemoteDpopTokenInCatalog(bearer, REMOTE_TOKEN)).toBe(bearer);
     expect(putRemoteDpopTokenInCatalog(otherRelay, REMOTE_TOKEN)).toBe(otherRelay);
+  });
+
+  it("does not persist cookie-auth shared project targets", () => {
+    const target = new CookieConnectionTarget({
+      environmentId: EnvironmentId.make("kara-share:11111111-1111-4111-8111-111111111111"),
+      label: "Shared project",
+      shareId: "11111111-1111-4111-8111-111111111111",
+      role: "read",
+      version: "1",
+      httpBaseUrl: "https://kara.example/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+      wsBaseUrl: "wss://kara.example/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+    });
+
+    expect(() =>
+      decodeCatalogDocument({
+        ...EMPTY_CONNECTION_CATALOG_DOCUMENT,
+        targets: [target],
+      }),
+    ).toThrow();
   });
 
   it("decodes a document written before the disabled list existed", () => {

@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 
 import {
   BearerConnectionTarget,
+  CookieConnectionTarget,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,
@@ -80,6 +81,13 @@ export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnect
 export const ConnectionCredential = Schema.Union([BearerConnectionCredential]);
 export type ConnectionCredential = typeof ConnectionCredential.Type;
 
+export class CookieConnectionRegistration extends Schema.TaggedClass<CookieConnectionRegistration>()(
+  "CookieConnectionRegistration",
+  {
+    target: CookieConnectionTarget,
+  },
+) {}
+
 export class PrimaryConnectionRegistration extends Schema.TaggedClass<PrimaryConnectionRegistration>()(
   "PrimaryConnectionRegistration",
   {
@@ -119,25 +127,28 @@ export const ConnectionRegistration = Schema.Union([
 export type ConnectionRegistration = typeof ConnectionRegistration.Type;
 
 /**
- * Platform-managed registrations are reconciled from the host (the desktop
- * bootstrap IPC) rather than persisted by the user. They cover the primary
- * local environment plus any additional desktop-local backends running
- * alongside it (e.g. a parallel WSL backend). The primary stays on same-origin
- * cookie auth (`PrimaryConnectionRegistration`); secondary local backends live
- * on a separate loopback origin and authenticate with a bearer token minted
- * from their bootstrap credential (`BearerConnectionRegistration`).
+ * Platform-managed registrations are reconciled from browser or desktop host
+ * state rather than persisted by the user. They cover the primary local
+ * environment, additional desktop-local backends, and browser-shared projects.
+ * Shared projects use the same-origin session cookie
+ * (`CookieConnectionRegistration`).
  */
 export const PlatformConnectionRegistration = Schema.Union([
   PrimaryConnectionRegistration,
   BearerConnectionRegistration,
+  CookieConnectionRegistration,
 ]);
 export type PlatformConnectionRegistration = typeof PlatformConnectionRegistration.Type;
 
 export function connectionRegistrationCatalogEntry(
-  registration: ConnectionRegistration | PrimaryConnectionRegistration,
+  registration:
+    | ConnectionRegistration
+    | PrimaryConnectionRegistration
+    | CookieConnectionRegistration,
 ): ConnectionCatalogEntry {
   switch (registration._tag) {
     case "PrimaryConnectionRegistration":
+    case "CookieConnectionRegistration":
     case "RelayConnectionRegistration":
       return {
         target: registration.target,

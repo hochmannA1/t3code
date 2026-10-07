@@ -32,6 +32,7 @@ import {
 } from "./githubRoutingPermissions.ts";
 import type {
   BearerConnectionTarget,
+  CookieConnectionTarget,
   ConnectionTarget,
   PreparedConnection,
   PrimaryConnectionTarget,
@@ -115,6 +116,59 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
       target,
     } satisfies PreparedConnection;
   });
+});
+
+const makeCookieBroker = Effect.fn("clientRuntime.connection.broker.makeCookie")(function* () {
+  const presentation = yield* ClientCapabilities.ClientPresentation;
+
+  return (target: CookieConnectionTarget) =>
+    Effect.try({
+      try: () => {
+        const httpUrl = new URL(target.httpBaseUrl);
+        const socketUrl = new URL(target.wsBaseUrl);
+        const normalizedPath = (pathname: string) => pathname.replace(/\/+$/u, "") || "/";
+        const matchingProtocols =
+          (httpUrl.protocol === "http:" && socketUrl.protocol === "ws:") ||
+          (httpUrl.protocol === "https:" && socketUrl.protocol === "wss:");
+        if (
+          !matchingProtocols ||
+          httpUrl.host !== socketUrl.host ||
+          httpUrl.username !== "" ||
+          httpUrl.password !== "" ||
+          socketUrl.username !== "" ||
+          socketUrl.password !== "" ||
+          httpUrl.search !== "" ||
+          httpUrl.hash !== "" ||
+          socketUrl.search !== "" ||
+          socketUrl.hash !== "" ||
+          target.httpBaseUrl.includes("?") ||
+          target.httpBaseUrl.includes("#") ||
+          target.wsBaseUrl.includes("?") ||
+          target.wsBaseUrl.includes("#") ||
+          normalizedPath(httpUrl.pathname) !== normalizedPath(socketUrl.pathname)
+        ) {
+          throw new Error("Invalid shared project endpoint URLs.");
+        }
+        const socketPath = socketUrl.pathname.replace(/\/+$/u, "");
+        socketUrl.pathname = /(?:^|\/)ws$/u.test(socketPath)
+          ? socketPath
+          : `${socketPath}/ws` || "/ws";
+        appendClientConnectionParams(socketUrl, presentation.metadata, "direct");
+        return {
+          environmentId: target.environmentId,
+          label: target.label,
+          httpBaseUrl: target.httpBaseUrl,
+          socketUrl: socketUrl.toString(),
+          httpAuthorization: null,
+          target,
+        } satisfies PreparedConnection;
+      },
+      catch: () =>
+        new ConnectionBlockedError({
+          reason: "configuration",
+          detail: "The shared project has invalid HTTP and WebSocket endpoint URLs.",
+        }),
+    });
 });
 
 const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")(function* () {
@@ -263,6 +317,7 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const primary = yield* makePrimaryBroker();
+  const cookie = yield* makeCookieBroker();
   const bearer = yield* makeBearerBroker();
   const relay = yield* makeRelayBroker();
   const ssh = yield* makeSshBroker();
@@ -280,6 +335,8 @@ export const make = Effect.gen(function* () {
       switch (target._tag) {
         case "PrimaryConnectionTarget":
           return primary(target);
+        case "CookieConnectionTarget":
+          return cookie(target);
         case "BearerConnectionTarget":
           return bearer({ ...entry, target });
         case "RelayConnectionTarget":

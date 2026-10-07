@@ -4,6 +4,7 @@ import {
   classifyHostedHttpsCompatibility,
   createAdvertisedEndpoint,
   deriveWsBaseUrl,
+  environmentEndpointUrl,
   normalizeHttpBaseUrl,
 } from "./endpoint.ts";
 
@@ -20,6 +21,16 @@ describe("advertised endpoint helpers", () => {
     expect(normalizeHttpBaseUrl("wss://example.com/socket")).toBe("https://example.com/");
     expect(deriveWsBaseUrl("https://example.com/api")).toBe("wss://example.com/");
     expect(deriveWsBaseUrl("http://127.0.0.1:3773")).toBe("ws://127.0.0.1:3773/");
+  });
+
+  it("preserves mounted path prefixes for descriptors and RPC endpoints", () => {
+    const base = "https://kara.example/agents/shared/t3/";
+    expect(environmentEndpointUrl(base, "/.well-known/t3/environment")).toBe(
+      "https://kara.example/agents/shared/t3/.well-known/t3/environment",
+    );
+    expect(environmentEndpointUrl(base, "/api/auth/session")).toBe(
+      "https://kara.example/agents/shared/t3/api/auth/session",
+    );
   });
 
   it("marks HTTP endpoints as blocked from hosted HTTPS apps", () => {

@@ -29,6 +29,8 @@ export function connectionRouteId(target: ConnectionTarget): string {
   switch (target._tag) {
     case "PrimaryConnectionTarget":
       return "primary";
+    case "CookieConnectionTarget":
+      return `cookie:${target.shareId}`;
     case "RelayConnectionTarget":
       return RELAY_ROUTE_ID;
     case "BearerConnectionTarget":
@@ -70,7 +72,11 @@ export function routeEntry(
 
 /** The base URL of a direct route, or null for T3 Connect and SSH. */
 export function routeHttpBaseUrl(route: ConnectionRoute): string | null {
-  if (route.target._tag === "PrimaryConnectionTarget") return route.target.httpBaseUrl;
+  if (
+    route.target._tag === "PrimaryConnectionTarget" ||
+    route.target._tag === "CookieConnectionTarget"
+  )
+    return route.target.httpBaseUrl;
   const profile = Option.getOrNull(route.profile);
   return profile?._tag === "BearerConnectionProfile" ? profile.httpBaseUrl : null;
 }
@@ -92,6 +98,7 @@ export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind
     case "SshConnectionTarget":
       return "ssh";
     case "PrimaryConnectionTarget":
+    case "CookieConnectionTarget":
     case "BearerConnectionTarget": {
       const hostname = routeHostname(route);
       if (hostname === null) return "public";

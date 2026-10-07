@@ -56,8 +56,24 @@ export function parseAssetCollectionKey(
 }
 
 export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
+  if (/^[a-z][a-z\d+.-]*:/iu.test(relativeUrl) || relativeUrl.startsWith("//")) {
+    return relativeUrl;
+  }
   try {
-    return new URL(relativeUrl, httpBaseUrl).toString();
+    const baseUrl = new URL(httpBaseUrl);
+    const basePath = baseUrl.pathname.replace(/\/+$/u, "");
+    baseUrl.pathname = `${basePath}/`;
+    const url = new URL(relativeUrl, baseUrl);
+    if (
+      relativeUrl.startsWith("/") &&
+      basePath &&
+      url.origin === baseUrl.origin &&
+      url.pathname !== basePath &&
+      !url.pathname.startsWith(`${basePath}/`)
+    ) {
+      url.pathname = `${basePath}${url.pathname}`;
+    }
+    return url.toString();
   } catch {
     return null;
   }
@@ -118,6 +134,7 @@ export function createAssetEnvironmentAtoms<R, E>(
     const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
     if (
       !local ||
+      supervisor.target._tag === "CookieConnectionTarget" ||
       local.environmentId === supervisor.target.environmentId ||
       !(
         error._tag === "AssetWorkspaceAssetNotFoundError" ||
@@ -135,7 +152,10 @@ export function createAssetEnvironmentAtoms<R, E>(
       request(WS_METHODS.assetsCreateUrl, input),
     );
     // Callers resolve against the thread's server, so preserve the local server's origin.
-    return { ...asset, relativeUrl: new URL(asset.relativeUrl, local.httpBaseUrl).href };
+    return {
+      ...asset,
+      relativeUrl: resolveAssetUrl(local.httpBaseUrl, asset.relativeUrl) ?? asset.relativeUrl,
+    };
   });
   const createUrl = createEnvironmentQueryAtomFamily(runtime, {
     label: "environment-data:assets:create-url",

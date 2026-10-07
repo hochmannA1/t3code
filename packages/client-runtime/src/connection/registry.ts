@@ -19,6 +19,7 @@ import {
   type ConnectionProfile,
   type ConnectionRegistration,
   type ConnectionRoute,
+  type CookieConnectionRegistration,
   type PlatformConnectionRegistration,
   type PrimaryConnectionRegistration,
   SshConnectionProfile,
@@ -101,7 +102,9 @@ export class EnvironmentRegistry extends Context.Service<
     readonly register: (
       registration: ConnectionRegistration,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
-    readonly registerPlatform: (registration: PrimaryConnectionRegistration) => Effect.Effect<void>;
+    readonly registerPlatform: (
+      registration: PrimaryConnectionRegistration | CookieConnectionRegistration,
+    ) => Effect.Effect<void>;
     readonly reconcilePlatform: (
       registrations: ReadonlyArray<PlatformConnectionRegistration>,
     ) => Effect.Effect<void>;
@@ -789,7 +792,7 @@ export const make = Effect.gen(function* () {
   );
 
   const registerPlatform = Effect.fn("EnvironmentRegistry.registerPlatform")(function* (
-    registration: PrimaryConnectionRegistration,
+    registration: PrimaryConnectionRegistration | CookieConnectionRegistration,
   ) {
     yield* installPlatformRegistration(registration);
   });

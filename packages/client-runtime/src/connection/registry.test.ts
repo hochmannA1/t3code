@@ -26,6 +26,7 @@ import {
   BearerConnectionCredential,
   BearerConnectionProfile,
   BearerConnectionRegistration,
+  CookieConnectionRegistration,
   type ConnectionCatalogEntry,
   type ConnectionRegistration,
   type ConnectionRoute,
@@ -45,6 +46,7 @@ import {
   ConnectionTransientError,
   ConnectionBlockedError,
   BearerConnectionTarget,
+  CookieConnectionTarget,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,
@@ -200,6 +202,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const storedDisabled = yield* Ref.make<ReadonlySet<EnvironmentId>>(
     new Set(options?.initialDisabled ?? []),
   );
+  const registrationWrites = yield* Ref.make<ReadonlyArray<ConnectionRegistration>>([]);
   const targetStore = Persistence.ConnectionTargetStore.of({
     list: Ref.get(storedTargets),
     listDisabled: Ref.get(storedDisabled).pipe(Effect.map((ids) => [...ids])),
@@ -207,6 +210,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const registrationStore = Persistence.ConnectionRegistrationStore.of({
     register: (registration, routes) =>
       Effect.gen(function* () {
+        yield* Ref.update(registrationWrites, (writes) => [...writes, registration]);
         yield* options?.beforeRegistrationRegister?.(registration) ?? Effect.void;
         yield* Ref.update(storedTargets, (current) =>
           replaceRoutes(current, registration.target.environmentId, routes),
@@ -453,6 +457,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   return {
     layer,
     storedTargets,
+    registrationWrites,
     shellCache,
     cacheClears,
     ownedDataClears,
@@ -1552,6 +1557,114 @@ describe("EnvironmentRegistry", () => {
         yield* Fiber.join(removal);
         const error = yield* Fiber.join(stateLookup);
         expect(error._tag).toBe("EnvironmentNotRegisteredError");
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect(
+    "reconciles shared projects without persisting them and clears their cache on removal",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness([]);
+        const target = new CookieConnectionTarget({
+          environmentId: EnvironmentId.make("kara-share:11111111-1111-4111-8111-111111111111"),
+          label: "Shared project",
+          shareId: "11111111-1111-4111-8111-111111111111",
+          role: "edit",
+          version: "1",
+          httpBaseUrl: "https://kara.example/shared-projects/share/t3/",
+          wsBaseUrl: "wss://kara.example/shared-projects/share/t3/",
+        });
+        const registration = new CookieConnectionRegistration({ target });
+        yield* Ref.update(harness.shellCache, (cache) =>
+          new Map(cache).set(target.environmentId, CACHED_SNAPSHOT),
+        );
+
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          yield* registry.registerPlatform(registration);
+          expect(
+            (yield* SubscriptionRef.get(registry.entries)).get(target.environmentId),
+          ).toMatchObject({
+            target,
+            enabled: true,
+          });
+          expect(yield* Ref.get(harness.registrationWrites)).toEqual([]);
+          expect(hasRoutes(yield* Ref.get(harness.storedTargets), target.environmentId)).toBe(
+            false,
+          );
+
+          const deniedRemoval = yield* Effect.flip(registry.remove(target.environmentId));
+          expect(deniedRemoval).toMatchObject({ _tag: "PlatformEnvironmentRemovalError" });
+
+          yield* registry.reconcilePlatform([]);
+          expect((yield* SubscriptionRef.get(registry.entries)).has(target.environmentId)).toBe(
+            false,
+          );
+          expect((yield* Ref.get(harness.shellCache)).has(target.environmentId)).toBe(false);
+          expect(yield* Ref.get(harness.cacheClears)).toEqual([target.environmentId]);
+          expect(yield* Ref.get(harness.ownedDataClears)).toEqual([target.environmentId]);
+          expect(yield* Ref.get(harness.registrationWrites)).toEqual([]);
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
+  );
+
+  it.effect.each([
+    { field: "version", role: "edit" as const, version: "2" },
+    { field: "role", role: "read" as const, version: "1" },
+  ])("replaces a shared-project supervisor when its %s changes", ({ role, version }) =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([]);
+      const environmentId = EnvironmentId.make("kara-share:11111111-1111-4111-8111-111111111111");
+      const registration = (nextRole: "read" | "edit", nextVersion: string) =>
+        new CookieConnectionRegistration({
+          target: new CookieConnectionTarget({
+            environmentId,
+            label: "Shared project",
+            shareId: "11111111-1111-4111-8111-111111111111",
+            role: nextRole,
+            version: nextVersion,
+            httpBaseUrl: "https://kara.example/shared-projects/share/t3/",
+            wsBaseUrl: "wss://kara.example/shared-projects/share/t3/",
+          }),
+        });
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.registerPlatform(new PrimaryConnectionRegistration({ target: TARGET }));
+        yield* awaitConnectionState(
+          registry,
+          TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        yield* registry.registerPlatform(registration("edit", "1"));
+        yield* awaitConnectionState(
+          registry,
+          environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        const primarySession = (yield* Ref.get(harness.sessions))[0];
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+        yield* registry.registerPlatform(registration("edit", "1"));
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+        expect(yield* Ref.get(harness.releasedSessions)).toBe(0);
+
+        yield* registry.registerPlatform(registration(role, version));
+        yield* awaitConnectionState(
+          registry,
+          environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(environmentId)?.target,
+        ).toMatchObject({ role, version });
+        const sessionsAfterChange = yield* Ref.get(harness.sessions);
+        expect(sessionsAfterChange).toHaveLength(3);
+        expect(sessionsAfterChange[0]).toBe(primarySession);
+        expect(yield* Ref.get(harness.releasedSessions)).toBe(1);
+        expect(yield* registry.state(TARGET.environmentId)).toMatchObject({ phase: "connected" });
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

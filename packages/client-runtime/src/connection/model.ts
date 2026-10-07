@@ -15,6 +15,18 @@ export class PrimaryConnectionTarget extends Schema.TaggedClass<PrimaryConnectio
   },
 ) {}
 
+export class CookieConnectionTarget extends Schema.TaggedClass<CookieConnectionTarget>()(
+  "CookieConnectionTarget",
+  {
+    ...ConnectionTargetBase,
+    shareId: Schema.String,
+    role: Schema.Literals(["read", "edit"]),
+    version: Schema.String,
+    httpBaseUrl: Schema.String,
+    wsBaseUrl: Schema.String,
+  },
+) {}
+
 export class BearerConnectionTarget extends Schema.TaggedClass<BearerConnectionTarget>()(
   "BearerConnectionTarget",
   {
@@ -40,6 +52,7 @@ export class SshConnectionTarget extends Schema.TaggedClass<SshConnectionTarget>
 
 export const ConnectionTarget = Schema.Union([
   PrimaryConnectionTarget,
+  CookieConnectionTarget,
   BearerConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,

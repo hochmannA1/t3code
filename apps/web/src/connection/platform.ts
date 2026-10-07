@@ -7,6 +7,7 @@ import {
   BearerConnectionCredential,
   BearerConnectionProfile,
   BearerConnectionRegistration,
+  CookieConnectionRegistration,
   BearerConnectionTarget,
   ConnectionBlockedError,
   type ConnectionAttemptError,
@@ -59,6 +60,7 @@ import {
 } from "./desktopLocal";
 import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
+import { pollSharedProjectRegistrations, shouldPollSharedProjects } from "./sharedProjects";
 
 let nextObservedRpcRequestId = 0;
 
@@ -573,6 +575,8 @@ const layerPlatformConnectionSource = Layer.effect(
     }
     const cacheRef = yield* Ref.make(new Map<string, CachedPlatformRegistration>());
     const rejectedRef = yield* Ref.make(new Map<string, RejectedSecondaryBootstrap>());
+    const sharedProjectsRef = yield* Ref.make<ReadonlyArray<CookieConnectionRegistration>>([]);
+    const lastSharedProjectsPollAt = yield* Ref.make<number | null>(null);
 
     // Resolve the full set of platform-managed environments the host currently
     // reports: the primary (same-origin cookie auth) plus any desktop-local
@@ -728,6 +732,46 @@ const layerPlatformConnectionSource = Layer.effect(
         }
         yield* Ref.set(rejectedRef, nextRejected);
       }
+
+      const previousSharedProjects = yield* Ref.get(sharedProjectsRef);
+      const now = yield* Clock.currentTimeMillis;
+      const shouldPoll = yield* Ref.modify(lastSharedProjectsPollAt, (lastPollAt) =>
+        shouldPollSharedProjects(lastPollAt, now) ? [true, now] : [false, lastPollAt],
+      );
+      let currentSharedProjects = previousSharedProjects;
+      if (shouldPoll) {
+        const sharedProjectsRead = yield* Effect.tryPromise({
+          try: () =>
+            pollSharedProjectRegistrations({
+              basePath: window.__KARA_T3_BASE_PATH__,
+              desktopBridgePresent: window.desktopBridge !== undefined,
+              origin: window.location.origin,
+              previous: previousSharedProjects,
+              fetch: window.fetch.bind(window),
+            }),
+          catch: () =>
+            new ConnectionTransientError({
+              reason: "remote-unavailable",
+              detail: "Shared projects polling failed.",
+            }),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.succeed({
+              _tag: "Failure" as const,
+              registrations: previousSharedProjects,
+              error,
+            }),
+          ),
+        );
+        if (sharedProjectsRead._tag === "Failure") {
+          yield* Effect.logWarning("Could not discover shared KARA projects.", {
+            error: sharedProjectsRead.error,
+          });
+        }
+        currentSharedProjects = sharedProjectsRead.registrations;
+        yield* Ref.set(sharedProjectsRef, currentSharedProjects);
+      }
+      registrations.push(...currentSharedProjects);
 
       yield* Ref.set(cacheRef, next);
       return registrations as ReadonlyArray<PlatformConnectionRegistration>;

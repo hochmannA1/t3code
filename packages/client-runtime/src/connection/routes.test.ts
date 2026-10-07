@@ -8,7 +8,7 @@ import {
   type ConnectionRoute,
 } from "./catalog.ts";
 import { gitHubRoutingConnectionKey } from "./githubRoutingPermissions.ts";
-import { BearerConnectionTarget, RelayConnectionTarget } from "./model.ts";
+import { BearerConnectionTarget, CookieConnectionTarget, RelayConnectionTarget } from "./model.ts";
 import {
   connectionRouteId,
   connectionRouteKind,
@@ -43,6 +43,18 @@ function direct(id: string, httpBaseUrl: string): ConnectionRoute {
   };
 }
 
+const COOKIE: ConnectionRoute = {
+  target: new CookieConnectionTarget({
+    environmentId: ENVIRONMENT_ID,
+    label: "Shared project",
+    shareId: "11111111-1111-4111-8111-111111111111",
+    role: "read",
+    version: "1",
+    httpBaseUrl: "https://kara.example/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+    wsBaseUrl: "wss://kara.example/shared-projects/11111111-1111-4111-8111-111111111111/t3/",
+  }),
+  profile: Option.none(),
+};
 const RELAY: ConnectionRoute = {
   target: new RelayConnectionTarget({ environmentId: ENVIRONMENT_ID, label: "Desk" }),
   profile: Option.none(),
@@ -61,6 +73,12 @@ describe("connection routes", () => {
     expect(connectionRouteKind(direct("ts6", "http://[fd7a:115c:a1e0::1]:3773/"))).toBe("tailnet");
     expect(connectionRouteLabel(TAILNET)).toBe("Tailscale");
     expect(connectionRouteLabel(RELAY)).toBe("T3 Connect");
+  });
+
+  it("identifies cookie-auth shared project routes without making them primary", () => {
+    expect(connectionRouteId(COOKIE.target)).toBe("cookie:11111111-1111-4111-8111-111111111111");
+    expect(connectionRouteKind(COOKIE)).toBe("public");
+    expect(connectionRouteLabel(COOKIE)).toBe("kara.example");
   });
 
   it("places a new route after faster kinds and ahead of T3 Connect", () => {
