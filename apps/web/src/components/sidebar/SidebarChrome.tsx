@@ -1,11 +1,17 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  BellIcon,
+  CalendarClockIcon,
+  ChartNoAxesColumnIcon,
+  SettingsIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { usePullRequestsSupported } from "../../state/environments";
+import { useEnvironments, usePullRequestsSupported } from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -26,6 +32,9 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+import { useUiStateStore } from "~/uiStateStore";
+import { ExperienceSwitch } from "../work/ExperienceSwitch";
+import { useWorkSidebarView } from "../../hooks/useWorkSidebarView";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -36,6 +45,8 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron: boolean;
 }) {
   const stageLabel = useEnvironmentStageLabel();
+  const appExperience = useUiStateStore((state) => state.appExperience);
+  const setAppExperience = useUiStateStore((state) => state.setAppExperience);
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const backdropVariant = resolveSidebarStageBackdropVariant(
     stageLabel,
@@ -64,6 +75,14 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           The padding keeps the brand's focus ring inside the clip. */}
       <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
         <SidebarBrand onBackdrop={backdropVariant !== null} />
+        <ExperienceSwitch
+          value={appExperience}
+          onValueChange={setAppExperience}
+          className="relative z-10 ml-[var(--workspace-titlebar-content-left)] md:ml-0"
+        />
+        {appExperience === "work" ? (
+          <SidebarViewToggle onBackdrop={backdropVariant !== null} />
+        ) : null}
         {pillLabel ? (
           <div className="ml-1 flex h-7 items-center">
             <Badge data-environment-identification="pill" size="sm" variant="secondary">
@@ -73,6 +92,36 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         ) : null}
       </div>
     </div>
+  );
+});
+
+const SidebarViewToggle = memo(function SidebarViewToggle({ onBackdrop }: { onBackdrop: boolean }) {
+  const [view, setView] = useWorkSidebarView();
+  const activityVisible = view === "activity";
+  const label = activityVisible ? "View projects" : "View activity";
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            aria-pressed={activityVisible}
+            onClick={() => setView(activityVisible ? "projects" : "activity")}
+            className={cn(
+              "relative z-10 ml-auto mr-2 inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              activityVisible && "bg-sidebar-row-active text-sidebar-foreground",
+              onBackdrop &&
+                "text-white/75 hover:bg-white/15 hover:text-white focus-visible:ring-white/90",
+              onBackdrop && activityVisible && "bg-white/15 text-white",
+            )}
+          >
+            <BellIcon className="size-4" />
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom">{label}</TooltipPopup>
+    </Tooltip>
   );
 });
 
@@ -101,7 +150,7 @@ export function SidebarBrandWidthProbe({
       ref={observeWidth}
     >
       <div className="ml-[var(--workspace-titlebar-content-left)] flex">
-        <SidebarBrandMark onBackdrop={false} />
+        <SidebarBrandMark />
       </div>
     </div>
   );
@@ -117,44 +166,39 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <SidebarBrandMark onBackdrop={onBackdrop} />
+      <SidebarBrandMark />
     </Link>
   );
 }
 
-function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
-  return (
-    // Center the visible capitals, without the font's ascender/descender space.
-    <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
-      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
-      <span
-        className={cn(
-          "truncate [text-box:trim-both_cap_alphabetic]",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Code
-      </span>
-    </span>
-  );
+function SidebarBrandMark() {
+  return <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />;
 }
 
 function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  fullWidth = false,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  fullWidth?: boolean;
 }) {
   return (
-    <SidebarMenuItem className="shrink-0">
+    <SidebarMenuItem className={cn("shrink-0", fullWidth && "min-w-0 flex-1")}>
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              onClick={onClick}
+              size={fullWidth ? "default" : "icon"}
+              className={cn(fullWidth && "w-full")}
+            >
               {icon}
+              {fullWidth ? <span>{label}</span> : null}
             </SidebarMenuButton>
           }
         />
@@ -165,6 +209,7 @@ function SidebarUtilityItem({
 }
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+  const appExperience = useUiStateStore((state) => state.appExperience);
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -172,6 +217,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
   const pullRequestsSupported = usePullRequestsSupported();
+  const { environments } = useEnvironments();
+  const automationsSupported = environments.some(
+    (environment) => environment.serverConfig?.automationCapabilities !== undefined,
+  );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -196,13 +245,18 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/usage" });
   }, [isMobile, navigate, setOpenMobile]);
 
+  const handleAutomationsClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/automations", search: {} });
+  }, [closeMobileSidebar, navigate]);
+
   const handleBackClick = useCallback(() => {
     closeMobileSidebar();
     void navigateToMainApp();
   }, [closeMobileSidebar, navigateToMainApp]);
 
   return (
-    <SidebarMenu className="flex-row items-center">
+    <SidebarMenu className="flex-row flex-wrap items-center">
       {isOnUtilityPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton onClick={handleBackClick}>
@@ -217,7 +271,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
-          {pullRequestsSupported ? (
+          {appExperience === "code" && pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
               label="Pull Requests"
@@ -229,6 +283,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Usage"
             onClick={handleUsageClick}
           />
+          {automationsSupported ? (
+            <SidebarUtilityItem
+              icon={<CalendarClockIcon />}
+              label="Automations"
+              onClick={handleAutomationsClick}
+              fullWidth
+            />
+          ) : null}
         </>
       )}
       <SidebarUpdatePill />

@@ -19,6 +19,7 @@ import {
   ProviderApprovalPolicy,
   ProviderInteractionMode,
   ProviderRequestKind,
+  ResponseProfile,
   ProviderSandboxMode,
   ProviderUserInputAnswers,
   UserInputAttachments,
@@ -70,6 +71,8 @@ export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
+  /** Historical recall, separate from the user's persisted message. */
+  memoryContext: Schema.optional(Schema.String.check(Schema.isMaxLength(32768))),
   /** Internal recovery signal. Allows an empty turn only for adapters that
       explicitly support promptless continuation. */
   continuation: Schema.optional(Schema.Boolean),
@@ -83,6 +86,7 @@ export const ProviderSendTurnInput = Schema.Struct({
   ),
   modelSelection: Schema.optional(ModelSelection),
   interactionMode: Schema.optional(ProviderInteractionMode),
+  responseProfile: Schema.optional(ResponseProfile),
 });
 export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;
 

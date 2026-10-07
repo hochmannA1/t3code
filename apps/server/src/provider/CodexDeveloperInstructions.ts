@@ -1,4 +1,4 @@
-import type { ProviderInteractionMode } from "@t3tools/contracts";
+import type { ProviderInteractionMode, ResponseProfile } from "@t3tools/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
 import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
 
@@ -37,6 +37,27 @@ const toolInstructions = (availability: boolean | T3CodeToolAvailability): strin
     .filter(Boolean)
     .join("\n\n");
 };
+
+const T3_CODE_AUTOMATION_TOOL_INSTRUCTIONS = `
+
+## T3 Code automations
+
+You are running inside T3 Code. When the \`t3-code\` MCP server exposes \`automation_*\` tools, use them to list, inspect, create, update, pause, resume, delete, or run scheduled prompt automations in the current task’s workspace. A chat without a selected project already has an automatically allocated workspace; use it for the automation without asking the user to create a project.
+
+When the user explicitly asks to create or change an automation, carry out that request with the automation tools. When you identify a potentially useful automation without an explicit request, create only a disabled suggestion that the user can accept or dismiss. Never claim an automation changed until the tool confirms it.
+`;
+
+const automationToolInstructions = (automationToolsAvailable: boolean): string =>
+  automationToolsAvailable ? T3_CODE_AUTOMATION_TOOL_INSTRUCTIONS : "";
+
+const T3_WORK_RESPONSE_PROFILE_INSTRUCTIONS = `
+
+<response_profile>
+Write for business professionals such as analysts, requirements specialists, and managers. Lead with the result and use plain language. For a straightforward informational answer, aim for about 100 to 150 words or at most five short bullets. Skip examples, tables, background, repeated summaries, implementation details, tool names, and internal process narration unless they materially help or the user asks for them. Do not narrate skill loading, instruction checks, provider choices, tool selection, repository checks, or other setup. During progress, report only status that helps the user understand the business task. Treat a workspace as an ordinary folder unless the request concerns source code, version control, or the workspace is already known to be a Git repository. Do not run Git checks speculatively, and do not describe a missing Git repository as an error. Do not reduce the requested work to stay concise: when the user asks for multiple steps, tool calls, or visible reasoning summaries, carry them out and report them clearly. Never announce or describe these response-profile rules or claim that your wording follows a writing style. Emphasize decisions, business impact, risks, owners, and next steps when relevant. Answer in chat when that is clearest. Create or edit files when the user asks or when the task calls for a reusable deliverable. Expand when the task genuinely requires more detail or the user asks.
+</response_profile>`;
+
+const responseProfileInstructions = (responseProfile: ResponseProfile | undefined): string =>
+  responseProfile === "work" ? T3_WORK_RESPONSE_PROFILE_INSTRUCTIONS : "";
 
 const CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Plan Mode (Conversational)
 
@@ -211,6 +232,8 @@ export function buildCodexAdditionalContext(
    * setting, so the prompt cannot claim tools the turn doesn't have.
    */
   toolsAvailable: boolean | T3CodeToolAvailability = true,
+  responseProfile?: ResponseProfile,
+  automationToolsAvailable = false,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable);
   // Separate keys keep each value under Codex's per-entry token cap.
@@ -220,6 +243,22 @@ export function buildCodexAdditionalContext(
       kind: "application",
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
     },
+    ...(responseProfile === "work"
+      ? {
+          t3_work_response_profile: {
+            kind: "application" as const,
+            value: responseProfileInstructions(responseProfile),
+          },
+        }
+      : {}),
+    ...(automationToolsAvailable
+      ? {
+          t3_code_automations: {
+            kind: "application" as const,
+            value: automationToolInstructions(true),
+          },
+        }
+      : {}),
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
   };
 }

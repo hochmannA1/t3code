@@ -1,3 +1,4 @@
+import { useWorkspaceDownload } from "~/assets/useWorkspaceDownload";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import type {
   ContextMenuItem as TreeContextMenuItem,
@@ -151,6 +152,7 @@ export default function FileBrowserPanel({
   // The tree renders rows in shadow DOM and its anchor rect is unreliable, so
   // capture the right-click position ourselves; contextmenu is a composed
   // event, so a capture-phase listener sees it with viewport coordinates.
+  const download = useWorkspaceDownload(environmentId, cwd);
   const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
   useEffect(() => {
     const capturePointer = (event: MouseEvent) => {
@@ -183,12 +185,20 @@ export default function FileBrowserPanel({
     try {
       const clicked = await api.contextMenu.show(
         [
+          {
+            id: "download",
+            label: entryKinds.get(relativePath) === "directory" ? "Download as ZIP" : "Download",
+          },
           ...fileMenuItems,
           { id: "copy-mention", label: "Copy mention" },
           { id: "add-to-chat", label: "Add to chat" },
         ],
         position,
       );
+      if (clicked === "download") {
+        await download(relativePath);
+        return;
+      }
       if (clicked === null) return;
       // "Open with" submenu selections report the child id ("editor:<id>"),
       // which is not present in the top-level item list.

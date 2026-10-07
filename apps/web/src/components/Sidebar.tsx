@@ -155,6 +155,7 @@ import {
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
+import { useSharedProjectAccess } from "../hooks/useSharedProjectAccess";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
 import { useThreadSearch } from "../state/queries";
@@ -199,6 +200,7 @@ import {
   resolveThreadLastVisitedAt,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
+  shouldCreateStandaloneWorkTask,
   shouldNavigateAfterThreadPark,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
@@ -265,6 +267,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { WorkProjectDialog } from "./work/WorkProjectDialog";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -2324,6 +2327,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 
 export default function Sidebar() {
   const projects = useProjects();
+  const appExperience = useUiStateStore((store) => store.appExperience);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
@@ -2409,13 +2413,22 @@ export default function Sidebar() {
     },
   });
   const newThreadContext = useHandleNewThread();
-  const openAddProjectCommandPalette = useCallback(
-    () => openCommandPalette({ open: "add-project" }),
+  const [workProjectDialogOpen, setWorkProjectDialogOpen] = useState(false);
+  const openLocalProjectCommandPalette = useCallback(
+    () => openCommandPalette({ open: "add-local-project" }),
     [],
   );
+  const openAddProjectCommandPalette = useCallback(() => {
+    if (appExperience === "work") {
+      setWorkProjectDialogOpen(true);
+      return;
+    }
+    openCommandPalette({ open: "add-project" });
+  }, [appExperience]);
   const environments = useEnvironmentIdentities();
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const sharedAccess = useSharedProjectAccess(primaryEnvironmentId);
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
@@ -4788,15 +4801,16 @@ export default function Sidebar() {
     updateThreadJumpHintsVisibility(shouldShowJumpHintsNow);
   }, [shouldShowJumpHintsNow, updateThreadJumpHintsVisibility]);
 
-  // New thread defaults to the project you're in (active thread's project,
-  // falling back to the top project) — same resolution the command palette
-  // uses. The command palette already offers a "New thread in..." submenu
-  // for multi-project setups.
+  // Work's plain new-task action creates a standalone task. Shift+click uses
+  // the project-specific path; Code keeps its current-project default.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
-      // One project: nothing to pick, create immediately. Shift+click creates
-      // directly in the current project even with several projects, skipping
-      // the palette picker.
+      // A plain Work click creates a standalone task regardless of project count.
+      if (shouldCreateStandaloneWorkTask(appExperience === "work", event?.shiftKey ?? false)) {
+        if (isMobile) setOpenMobile(false);
+        void newThreadContext.handleNewThread(null);
+        return;
+      }
       if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
         if (isMobile) setOpenMobile(false);
         void startNewThreadFromContext({
@@ -4810,20 +4824,17 @@ export default function Sidebar() {
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [appExperience, isMobile, newThreadContext, projectGroups.length, setOpenMobile],
   );
 
-  // The button mirrors chat.new: in multi-project setups both route through
-  // the command palette's "New thread in..." picker, and in single-project
-  // setups both create immediately. In multi-project setups the label is only
-  // the picker's shortcut: falling back to chat.newLocal would advertise the
-  // same shortcut for both the picker and direct create. In single-project
-  // setups both commands create directly, so chat.newLocal is a valid
-  // fallback. The second tooltip line (multi-project only) advertises
-  // shift+click and its keyboard twin chat.newLocal for direct create.
+  // Code keeps its current-project default and project picker behavior. Work
+  // advertises only its standalone shortcut here; chat.newLocal stays on the
+  // Shift+click hint for creating in the current project.
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.new") ??
-    (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
+    (appExperience !== "work" && projectGroups.length <= 1
+      ? shortcutLabelForCommand(keybindings, "chat.newLocal")
+      : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <>
@@ -4838,6 +4849,7 @@ export default function Sidebar() {
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
+              isWorkExperience={appExperience === "work"}
               projectScope={
                 <Combobox
                   items={projectScopeItems}
@@ -4971,11 +4983,16 @@ export default function Sidebar() {
                 </Combobox>
               }
               onNewProject={openAddProjectCommandPalette}
+              newProjectDisabled={sharedAccess.isSharedProject}
               onNewThread={handleNewThreadClick}
-              newThreadDisabled={projects.length === 0}
+              newThreadDisabled={
+                !sharedAccess.canOperate || (appExperience !== "work" && projects.length === 0)
+              }
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
-              showNewThreadInProjectHint={projectGroups.length > 1}
+              showNewThreadInProjectHint={
+                appExperience === "work" ? projectGroups.length > 0 : projectGroups.length > 1
+              }
               searchInputRef={threadSearchInputRef}
               searchQuery={threadSearchQuery}
               onSearchQueryChange={(value) => {
@@ -5405,26 +5422,31 @@ export default function Sidebar() {
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {projects.length === 0 ? (
                 <>
-                  <span>No projects yet</span>
+                  <span>{appExperience === "work" ? "No tasks yet" : "No projects yet"}</span>
                   <button
                     type="button"
                     onClick={openAddProjectCommandPalette}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
+                    {appExperience === "work" ? "Create project" : "Add project"}
                   </button>
                 </>
               ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
+                `No ${appExperience === "work" ? "tasks" : "threads"} in ${scopedProjectGroup.displayName} yet`
               ) : (
-                "No threads yet"
+                `No ${appExperience === "work" ? "tasks" : "threads"} yet`
               )}
             </div>
           ) : null}
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
+      <WorkProjectDialog
+        open={workProjectDialogOpen}
+        onOpenChange={setWorkProjectDialogOpen}
+        onChooseFolder={openLocalProjectCommandPalette}
+      />
     </>
   );
 }

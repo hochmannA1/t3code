@@ -35,6 +35,9 @@ export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";
 
+export const ResponseProfile = Schema.Literals(["work", "code"]);
+export type ResponseProfile = typeof ResponseProfile.Type;
+
 export const ProviderRequestKind = Schema.Literals([
   "command",
   "file-read",

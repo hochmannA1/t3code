@@ -250,6 +250,23 @@ describe("ClaudeSettings auto-compaction", () => {
   });
 });
 
+describe("ServerSettings agent tools", () => {
+  it("defaults browser and automation access on independently", () => {
+    const settings = decodeServerSettings({});
+
+    expect(settings.enableAgentBrowserAccess).toBe(true);
+    expect(settings.enableAgentAutomationAccess).toBe(true);
+  });
+
+  it("accepts independent automation access patches", () => {
+    const patch = decodeServerSettingsPatch({
+      enableAgentAutomationAccess: false,
+    });
+
+    expect(patch.enableAgentAutomationAccess).toBe(false);
+  });
+});
+
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
@@ -1045,6 +1062,30 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
+  });
+});
+
+describe("Memory settings", () => {
+  it("loads existing installations with memory and dreaming enabled and a dedicated model", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.memory).toMatchObject({
+      enabled: true,
+      useMemories: true,
+      generateMemories: true,
+      dreaming: true,
+      modelSelection: { instanceId: "codex", model: "gpt-5.6-luna" },
+    });
+    expect(decodeServerSettings(encodeServerSettings(settings)).memory).toEqual(settings.memory);
+  });
+
+  it.each([
+    { maxContextTokens: 0 },
+    { maxContextTokens: 8193 },
+    { maxSourcesPerPass: 21 },
+    { idleMinutes: 0 },
+    { modelSelection: null },
+  ])("rejects unbounded or missing memory processing configuration: %j", (memory) => {
+    expect(() => decodeServerSettingsPatch({ memory })).toThrow();
   });
 });
 

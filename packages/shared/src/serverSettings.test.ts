@@ -24,6 +24,27 @@ import {
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("serverSettings helpers", () => {
+  it("preserves memory controls while replacing model-specific options", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      memory: {
+        ...DEFAULT_SERVER_SETTINGS.memory,
+        dreaming: false,
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "old-model", [
+          {
+            id: "reasoningEffort",
+            value: "high",
+          },
+        ]),
+      },
+    };
+    const selection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "new-model");
+    const next = applyServerSettingsPatch(current, { memory: { modelSelection: selection } });
+    expect(next.memory.dreaming).toBe(false);
+    expect(next.memory.modelSelection).toEqual(selection);
+    expect(next.textGenerationModelSelection).toEqual(current.textGenerationModelSelection);
+  });
+
   it("changes a cleanup rule without replacing the machine's other rules", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },

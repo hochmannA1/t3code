@@ -24,6 +24,7 @@ import {
   deriveMessagesTimelineRows,
   deriveMessagesTimelineRowsWithState,
   liveWorkEntryLabel,
+  presentWorkTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveWorkGroupScrollIndex,
@@ -611,6 +612,75 @@ describe("resolveAssistantMessageCopyState", () => {
   });
 });
 
+describe("Work timeline presentation", () => {
+  const runId = RunId.make("work-presentation-run");
+  const makeWorkRow = (
+    id: string,
+    entry: WorkLogEntry,
+    isExpandedToolGroup = false,
+  ): Extract<MessagesTimelineRow, { kind: "work" }> => ({
+    kind: "work",
+    id,
+    createdAt: entry.createdAt,
+    groupedEntries: [entry],
+    isExpandedToolGroup,
+  });
+
+  it("folds completed tool activity but keeps expanded details and subagent links", () => {
+    const createdAt = "2026-01-01T00:00:00Z";
+    const toolEntry: WorkLogEntry = {
+      id: "completed-tool",
+      createdAt,
+      label: "Ran tests",
+      tone: "tool",
+      runId,
+      toolLifecycleStatus: "completed",
+    };
+    const notificationEntry: WorkLogEntry = {
+      id: "subagent-notification",
+      createdAt,
+      label: "Subagent completed",
+      tone: "info",
+      itemType: "notification",
+    };
+    const expandedToolRow = makeWorkRow("expanded-tool", toolEntry, true);
+    const rows: MessagesTimelineRow[] = [
+      makeWorkRow("completed-tool", toolEntry),
+      expandedToolRow,
+      makeWorkRow("notification", notificationEntry),
+      { kind: "thinking", id: "thinking", createdAt: null },
+    ];
+
+    expect(
+      presentWorkTimelineRows({ rows, expandedRunIds: new Set() }).map((row) => row.id),
+    ).toEqual(["expanded-tool", "notification", "thinking"]);
+    expect(
+      presentWorkTimelineRows({ rows, expandedRunIds: new Set([runId]) }).map((row) => row.id),
+    ).toContain("completed-tool");
+  });
+
+  it("keeps final assistant replies visible while folding their completed activity", () => {
+    const fixture = makeStreamingTimelineFixture();
+    const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: fixture.visibleTurnItems.slice(0, 3),
+      optimisticMessages: [],
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    const presentedRows = presentWorkTimelineRows({ rows, expandedRunIds: new Set() });
+
+    expect(
+      presentedRows.some((row) => row.kind === "message" && row.message.role === "assistant"),
+    ).toBe(true);
+    expect(presentedRows.some((row) => row.kind === "work")).toBe(false);
+  });
+});
+
 describe("deriveMessagesTimelineRows", () => {
   it("stops stranded thinking after a steer and follows the next thought or tool", () => {
     const runId = RunId.make("steered-run");
@@ -1001,6 +1071,7 @@ describe("deriveMessagesTimelineRows", () => {
         active: false,
       },
     ]);
+    expect(presentWorkTimelineRows({ rows, expandedRunIds: new Set() })).toEqual(rows);
   });
 
   it("gives live compaction the activity slot and restores Thinking when it completes", () => {

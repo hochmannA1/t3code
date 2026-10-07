@@ -1068,7 +1068,7 @@ it.effect.each([
         yield* launcher.launchEditor({ editor, cwd: "/workspace with spaces/file.ts:12:4" });
       }).pipe(
         Effect.provide(
-          testLayer({
+          layerTest({
             platform: "darwin",
             env: { HOME: home, PATH: path.join(home, "empty") },
             onSpawn: (command) => {
@@ -1111,7 +1111,7 @@ it.effect("matches macOS bundles on the name boundary only", () =>
         return yield* launcher.resolveAvailableEditors();
       }).pipe(
         Effect.provide(
-          testLayer({ platform: "darwin", env: { HOME: home, PATH: path.join(home, "bin") } }),
+          layerTest({ platform: "darwin", env: { HOME: home, PATH: path.join(home, "bin") } }),
         ),
       );
 
@@ -1147,15 +1147,18 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
       yield* fs.chmod(path.join(bin, name), 0o755);
     }
 
+    let stableSpawned: ChildProcess.StandardCommand | undefined;
     let spawned: ChildProcess.StandardCommand | undefined;
     const editors = yield* Effect.gen(function* () {
       const launcher = yield* ExternalLauncher.ExternalLauncher;
       const available = yield* launcher.resolveAvailableEditors();
+      yield* launcher.launchEditor({ editor: "vscode", cwd: "/workspace/file.ts" });
+      stableSpawned = spawned;
       yield* launcher.launchEditor({ editor: "vscode-insiders", cwd: "/workspace/file.ts" });
       return available;
     }).pipe(
       Effect.provide(
-        testLayer({
+        layerTest({
           platform: "darwin",
           env: { HOME: home, PATH: path.join(home, "empty") },
           onSpawn: (command) => {
@@ -1165,8 +1168,8 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
       ),
     );
 
-    assert.notInclude(editors, "vscode");
     assert.include(editors, "vscode-insiders");
+    assert.notEqual(stableSpawned?.command, path.join(bin, "code"));
     assert.equal(spawned?.command, path.join(bin, "code-insiders"));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

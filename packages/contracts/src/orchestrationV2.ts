@@ -58,6 +58,7 @@ import {
   ProviderApprovalOption,
   ProviderInteractionMode,
   ProviderRequestKind,
+  ResponseProfile,
   ProviderUserInputAnswers,
   UserInputAttachments,
   UserInputAttachmentAnswerPayload,
@@ -1112,6 +1113,7 @@ export type OrchestrationV2Notification = typeof OrchestrationV2Notification.Typ
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
+  responseProfile: Schema.optional(ResponseProfile),
   scheduledTaskId: Schema.optional(ScheduledTaskId),
   // The sending agent's thread in this environment, separate from the receiving thread.
   senderThreadId: Schema.optional(ThreadId),
@@ -2835,6 +2837,7 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("message.dispatch"),
     notification: Schema.optional(OrchestrationV2Notification),
     ...OrchestrationV2CreationFields,
+    responseProfile: Schema.optional(ResponseProfile),
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     commandId: CommandId,
@@ -3191,6 +3194,7 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
       messageId: Schema.optional(MessageId),
       text: Schema.String,
       context: Schema.optional(OrchestrationMessageContext),
+      responseProfile: Schema.optional(ResponseProfile),
       attachments: Schema.Array(ChatAttachment),
     }),
   ),

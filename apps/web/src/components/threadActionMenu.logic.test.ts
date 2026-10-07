@@ -101,23 +101,18 @@ describe("buildThreadActionMenuItems", () => {
     expect(ids(baseState)).toEqual(expect.arrayContaining(["pin", "settle", "snooze"]));
   });
 
-  it("offers auto-settle as a submenu with the current option checked", () => {
-    const find = (state: ThreadActionMenuState) =>
-      buildThreadActionMenuItems(state).find((item) => item.id === "auto-settle");
-    const on = find(baseState);
-    expect(on?.label).toBe("Auto-settle behavior");
-    expect(on?.children?.map((child) => [child.id, child.checked])).toEqual([
-      ["auto-settle:enabled", true],
-      ["auto-settle:disabled", false],
-    ]);
-    const off = find({ ...baseState, autoSettleEnabled: false });
-    expect(off?.children?.map((child) => child.checked)).toEqual([false, true]);
-    // Sits with the per-thread settings after Mark unread, not the lifecycle verbs.
-    const items = buildThreadActionMenuItems(baseState);
-    expect(items[items.findIndex((item) => item.id === "mark-unread") + 1]?.id).toBe("auto-settle");
-    expect(
-      ids({ ...baseState, supports: { ...baseState.supports, autoSettleOptOut: false } }),
-    ).not.toContain("auto-settle");
+  it("uses task language for settlement actions in Work mode", () => {
+    const complete = buildThreadActionMenuItems({ ...baseState, workTerminology: true }).find(
+      (item) => item.id === "settle",
+    );
+    const reopen = buildThreadActionMenuItems({
+      ...baseState,
+      workTerminology: true,
+      isSettled: true,
+    }).find((item) => item.id === "unsettle");
+
+    expect(complete?.label).toBe("Mark task complete");
+    expect(reopen?.label).toBe("Mark task active");
   });
 
   it("disables snooze when the thread cannot snooze, keeping presets visible", () => {

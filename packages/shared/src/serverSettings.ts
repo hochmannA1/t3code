@@ -246,7 +246,7 @@ function translateLegacyProjectOverridePatch(
     for (const [projectId, value] of Object.entries(map)) {
       if (canonicalProjectIds.has(projectId)) continue;
       const entry: ProjectSettingsOverrides = {
-        ...(entries.get(projectId) ?? currentEntries[projectId] ?? {}),
+        ...(entries.get(projectId) ?? currentEntries[projectId]),
       };
       if (value === null || value === undefined) {
         delete entry[key];
@@ -328,6 +328,9 @@ export function applyServerSettingsPatch(
   const next = deepMerge(current, patchForMerge);
   const nextWithReplacementsBase = {
     ...next,
+    ...(patch.memory?.modelSelection !== undefined
+      ? { memory: { ...next.memory, modelSelection: patch.memory.modelSelection } }
+      : {}),
     ...(worktreeCleanupPatch === undefined
       ? {}
       : {

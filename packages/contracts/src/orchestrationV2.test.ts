@@ -27,6 +27,8 @@ import {
   OrchestrationV2Checkpoint,
   OrchestrationV2CheckpointScope,
   OrchestrationV2Command,
+  OrchestrationV2ConversationMessage,
+  OrchestrationV2ConversationMessageJson,
   OrchestrationV2LimitRecoveryUpdate,
   OrchestrationV2DomainEvent,
   OrchestrationV2ProviderCapabilities,
@@ -93,6 +95,62 @@ const decodeOrchestrationV2SubscribeThreadInput = Schema.decodeUnknownSync(
 );
 
 describe("orchestration V2 contracts", () => {
+  it("round-trips response profiles for immediate and queued message dispatches", () => {
+    const decodeMessage = Schema.decodeUnknownSync(OrchestrationV2ConversationMessage);
+    const encodeMessageJson = Schema.encodeSync(OrchestrationV2ConversationMessageJson);
+    const decodeMessageJson = Schema.decodeUnknownSync(OrchestrationV2ConversationMessageJson);
+    const modes = [{ type: "start_immediately" }, { type: "queue_after_active" }] as const;
+
+    for (const [index, dispatchMode] of modes.entries()) {
+      const decodedCommand = decodeOrchestrationV2Command({
+        type: "message.dispatch",
+        commandId: `response-profile-${index}`,
+        threadId: "thread-response-profile",
+        messageId: `message-response-profile-${index}`,
+        text: "Write a concise update.",
+        attachments: [],
+        responseProfile: "work",
+        dispatchMode,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      if (decodedCommand.type !== "message.dispatch") throw new Error("Expected message.dispatch");
+      const command = decodedCommand;
+      expect(command.responseProfile).toBe("work");
+
+      const message = decodeMessage({
+        createdBy: "user",
+        creationSource: "web",
+        responseProfile: command.responseProfile,
+        id: command.messageId,
+        threadId: command.threadId,
+        runId: null,
+        nodeId: null,
+        role: "user",
+        text: command.text,
+        attachments: [],
+        streaming: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      expect(decodeMessageJson(encodeMessageJson(message)).responseProfile).toBe("work");
+    }
+
+    const omittedCommand = decodeOrchestrationV2Command({
+      type: "message.dispatch",
+      commandId: "response-profile-omitted",
+      threadId: "thread-response-profile",
+      messageId: "message-response-profile-omitted",
+      text: "Keep legacy callers working.",
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    if (omittedCommand.type !== "message.dispatch") throw new Error("Expected message.dispatch");
+    expect(omittedCommand.responseProfile).toBeUndefined();
+  });
+
   it("carries command failure metadata through runtime and JSON schemas without output text", () => {
     const base = {
       id: "command-item",

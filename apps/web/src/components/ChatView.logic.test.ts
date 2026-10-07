@@ -80,6 +80,7 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   startNewThreadForProject,
+  shouldAllocateStandaloneProject,
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
   shouldWriteThreadErrorToCurrentServerThread,
@@ -580,6 +581,39 @@ describe("startNewThreadForProject", () => {
       }),
     ).toBe(false);
     expect(called).toBe(false);
+  });
+});
+
+describe("shouldAllocateStandaloneProject", () => {
+  it("allocates a Work standalone project only for an unallocated local standalone draft", () => {
+    expect(
+      shouldAllocateStandaloneProject({
+        projectAvailable: false,
+        isLocalDraftThread: true,
+        logicalProjectKey: "standalone-draft:draft-1",
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllocateStandaloneProject({
+        projectAvailable: true,
+        isLocalDraftThread: true,
+        logicalProjectKey: "standalone-draft:draft-1",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAllocateStandaloneProject({
+        projectAvailable: false,
+        isLocalDraftThread: true,
+        logicalProjectKey: "project:project-1",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAllocateStandaloneProject({
+        projectAvailable: false,
+        isLocalDraftThread: false,
+        logicalProjectKey: "standalone-draft:draft-1",
+      }),
+    ).toBe(false);
   });
 });
 

@@ -1,17 +1,24 @@
-import {
-  FileFinder,
-  type FileItem,
-  type GrepCursor,
-  type GrepOptions,
-  type GrepResult,
+import * as NodeModule from "node:module";
+import type {
+  FileItem,
+  GrepCursor,
+  GrepOptions,
+  GrepResult,
+  WatchBatchCallback,
 } from "@ff-labs/fff-node";
 import { afterEach, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
 
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
+
+const { FileFinder } = NodeModule.createRequire(import.meta.url)(
+  "@ff-labs/fff-node",
+) as typeof import("@ff-labs/fff-node");
+type FileFinder = import("@ff-labs/fff-node").FileFinder;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -206,6 +213,34 @@ it.effect("returns partial path results when the initial scan times out", () =>
       expect(mixedSearch).toHaveBeenCalledTimes(4);
     }),
   ),
+);
+
+it.effect("publishes project-entry changes from the native watcher and unsubscribes", () =>
+  Effect.gen(function* () {
+    const callbacks: WatchBatchCallback[] = [];
+    const unsubscribe = vi.fn();
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const finder = {
+          destroy: vi.fn(),
+          waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+          watch: vi.fn((callback: WatchBatchCallback) => {
+            callbacks.push(callback);
+            return { ok: true as const, value: unsubscribe };
+          }),
+        } as unknown as FileFinder;
+        vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+        const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project", "paths");
+        const pull = yield* Stream.toPull(searchIndex.changes);
+        expect(yield* pull).toEqual([{ revision: 0 }]);
+        expect(finder.watch).toHaveBeenCalledTimes(1);
+        callbacks[0]?.([{ kind: "created", path: "/workspace/project/new.ts" }]);
+        expect(yield* pull).toEqual([{ revision: 1 }]);
+      }),
+    );
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  }),
 );
 
 it.effect("preserves FileFinder destroy failures as structured defects", () =>

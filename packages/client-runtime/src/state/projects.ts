@@ -9,6 +9,8 @@ import {
 
 export { normalizeProjectPathForComparison, normalizeProjectPathForDispatch };
 
+export { isStandaloneProject } from "@t3tools/shared/projectContext";
+
 export const isWindowsPlatform = (platform: string): boolean => {
   return /^win(dows)?/i.test(platform);
 };

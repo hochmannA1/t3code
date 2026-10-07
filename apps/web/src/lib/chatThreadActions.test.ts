@@ -115,6 +115,21 @@ describe("chatThreadActions", () => {
     expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
   });
 
+  it("prefers an explicitly selected project over the active thread", () => {
+    const selectedProjectRef = scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID);
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        selectedProjectRef,
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+      }),
+    );
+
+    expect(projectRef).toEqual(selectedProjectRef);
+  });
+
   it("falls back to the active draft thread project when there is no active thread", () => {
     const projectRef = resolveThreadActionProjectRef(
       createContext({
@@ -155,7 +170,7 @@ describe("chatThreadActions", () => {
     expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
   });
 
-  it("does not start a thread when there is no project context", async () => {
+  it("starts a projectless thread when there is no project context", async () => {
     const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
 
     const didStart = await startNewThreadFromContext(
@@ -165,7 +180,21 @@ describe("chatThreadActions", () => {
       }),
     );
 
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(null);
+  });
+
+  it("reports a projectless thread that could not be opened", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => null);
+
+    const didStart = await startNewThreadFromContext(
+      createContext({
+        defaultProjectRef: null,
+        handleNewThread,
+      }),
+    );
+
     expect(didStart).toBe(false);
-    expect(handleNewThread).not.toHaveBeenCalled();
+    expect(handleNewThread).toHaveBeenCalledWith(null);
   });
 });

@@ -32,8 +32,14 @@ import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
 import * as AttachmentHandlers from "./toolkits/attachment/handlers.ts";
 import { ThreadToolkit } from "./toolkits/thread/tools.ts";
 import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
+import { ThreadToolkit as ThreadHistoryToolkit } from "./toolkits/threads/tools.ts";
+import * as ThreadHistoryHandlers from "./toolkits/threads/handlers.ts";
 import * as ThreadMetadataMcpService from "./ThreadMetadataMcpService.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
+import { AutomationToolkit } from "./toolkits/automations/tools.ts";
+import * as AutomationHandlers from "./toolkits/automations/handlers.ts";
+import { MemoryToolkit } from "./toolkits/memory/tools.ts";
+import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
@@ -708,7 +714,11 @@ export const layerThreadToolkit = McpServer.toolkit(ThreadToolkit).pipe(
   Layer.provide(ThreadHandlers.layer),
 );
 
-const layerWorktreeToolkitRegistration = McpServer.toolkit(WorktreeToolkit).pipe(
+export const ThreadToolkitRegistrationLive = McpServer.toolkit(ThreadHistoryToolkit).pipe(
+  Layer.provide(ThreadHistoryHandlers.ThreadToolkitHandlersLive),
+);
+
+export const layerWorktreeToolkitRegistration = McpServer.toolkit(WorktreeToolkit).pipe(
   Layer.provide(WorktreeHandlers.layer),
   Layer.provide(WorktreeMcpService.layer),
 );
@@ -731,6 +741,14 @@ const layerAttachmentRegistration = McpServer.toolkit(AttachmentToolkit).pipe(
 
 export const layerPullRequestsToolkit = McpServer.toolkit(PullRequestsToolkit).pipe(
   Layer.provide(PullRequestsHandlers.layer),
+);
+
+export const layerAutomationToolkit = McpServer.toolkit(AutomationToolkit).pipe(
+  Layer.provide(AutomationHandlers.AutomationToolkitHandlersLive),
+);
+
+export const layerMemoryToolkit = McpServer.toolkit(MemoryToolkit).pipe(
+  Layer.provide(MemoryHandlers.MemoryToolkitHandlersLive),
 );
 
 const layerDeviceStandardToolkitRegistration = McpServer.toolkit(DeviceStandardToolkit).pipe(
@@ -757,12 +775,15 @@ export const layer = Layer.mergeAll(
   layerPreviewToolkit,
   layerOrchestratorToolkit,
   layerThreadToolkit,
+  ThreadToolkitRegistrationLive,
   layerAttachmentRegistration,
   layerProjectRegistration,
   layerEnvironmentRegistration,
   layerPreviewControlsRegistration,
   layerWorktreeToolkitRegistration,
   layerPullRequestsToolkit,
+  layerAutomationToolkit,
+  layerMemoryToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
 ).pipe(Layer.provideMerge(layerMcpTransport));

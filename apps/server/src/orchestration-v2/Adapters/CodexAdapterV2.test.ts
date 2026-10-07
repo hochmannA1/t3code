@@ -490,6 +490,31 @@ describe("CodexAdapterV2 runtime policy", () => {
     }),
   );
 
+  it.effect("adds the persisted Work response profile to T3 Codex context", () =>
+    Effect.gen(function* () {
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "native-work-response-profile",
+        codexInput: [{ type: "text", text: "summarize this" }],
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: null,
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4",
+        },
+        hasT3Mcp: true,
+        responseProfile: "work",
+      });
+
+      assert.include(
+        params.additionalContext?.t3_work_response_profile?.value ?? "",
+        "<response_profile>",
+      );
+    }),
+  );
+
   it.effect("omits default-mode collaboration settings without the T3 MCP server", () =>
     Effect.gen(function* () {
       const params = yield* CodexAdapterV2.buildCodexTurnStartParams({

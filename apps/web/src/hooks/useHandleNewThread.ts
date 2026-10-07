@@ -4,7 +4,13 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_SERVER_SETTINGS, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type EnvironmentId,
+  DEFAULT_SERVER_SETTINGS,
+  type ScopedProjectRef,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -15,7 +21,7 @@ import {
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
-import { newDraftId, newThreadId } from "../lib/utils";
+import { newDraftId, newProjectId, newThreadId } from "../lib/utils";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -23,6 +29,7 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { isSharedProjectEnvironment } from "../sharedProjectAccess";
 import { readProjects, readThreadShell, useProjects, useThreadShell } from "../state/entities";
 import {
   hasExplicitComposerModelSelection,
@@ -34,6 +41,8 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import { createWorkModelSelection, resolveWorkComplexity } from "../workExperience";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
@@ -58,28 +67,43 @@ export function useNewThreadHandler() {
   const environmentServerConfigs = useAtomValue(environmentServerConfigsAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const router = useRouter();
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const getCurrentRouteTarget = useCallback(() => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
     return resolveThreadRouteTarget(currentRouteParams);
   }, [router]);
 
   return useCallback(
-    (
-      projectRef: ScopedProjectRef,
+    async (
+      projectRef: ScopedProjectRef | null,
       options?: {
+        environmentId?: EnvironmentId;
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
         startFromOrigin?: boolean;
         replace?: boolean;
+        carryComposerContent?: boolean;
       },
       // Which draft the thread ended up in, so a caller that has something to put in it — a
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
       const projects = readProjects();
+      const targetEnvironmentId =
+        projectRef?.environmentId ?? options?.environmentId ?? primaryEnvironmentId;
+      if (projectRef === null && isSharedProjectEnvironment(targetEnvironmentId)) {
+        const sharedProjects = projects.filter(
+          (project) => project.environmentId === targetEnvironmentId,
+        );
+        if (sharedProjects.length !== 1) return null;
+        projectRef = scopeProjectRef(sharedProjects[0]!.environmentId, sharedProjects[0]!.id);
+      }
       const targetServerSettings =
-        environmentServerConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
+        (targetEnvironmentId
+          ? environmentServerConfigs.get(targetEnvironmentId)?.settings
+          : null) ?? DEFAULT_SERVER_SETTINGS;
       const {
         getComposerDraft,
         getDraftSessionByLogicalProjectKey,
@@ -90,9 +114,91 @@ export function useNewThreadHandler() {
         setLogicalProjectDraftThreadId,
         setModelSelection,
       } = useComposerDraftStore.getState();
+
       const requestingRouteHref = router.state.location.href;
       const routeChangedSinceRequest = () => router.state.location.href !== requestingRouteHref;
       const currentRouteTarget = getCurrentRouteTarget();
+      if (options?.carryComposerContent && currentRouteTarget?.kind === "draft") {
+        const draftId = currentRouteTarget.draftId;
+        const draft = getDraftSession(draftId);
+        if (!draft) return null;
+        const project = projectRef
+          ? projects.find(
+              (candidate) =>
+                candidate.id === projectRef.projectId &&
+                candidate.environmentId === projectRef.environmentId,
+            )
+          : null;
+        const targetRef = projectRef ?? scopeProjectRef(draft.environmentId, newProjectId());
+        const logicalKey = project
+          ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
+          : projectRef
+            ? scopedProjectKey(projectRef)
+            : `standalone-draft:${draftId}`;
+        const composerDraft = getComposerDraft(draftId);
+        setLogicalProjectDraftThreadId(
+          logicalKey,
+          targetRef,
+          draftId,
+          projectRef === null ? { envMode: "local", startFromOrigin: false } : undefined,
+        );
+        if (!hasExplicitComposerModelSelection(composerDraft)) {
+          applyStickyState(draftId);
+          const defaultSelection = project
+            ? resolveProjectSettings(targetServerSettings, project.id, project).settings
+                .defaultModelSelection
+            : targetServerSettings.defaultModelSelection;
+          if (defaultSelection) {
+            setModelSelection(draftId, defaultSelection, { replaceOptions: true });
+          }
+        }
+        return { draftId, threadId: draft.threadId };
+      }
+
+      // A projectless draft carries only an environment until its first
+      // message allocates a standalone project on that environment.
+      if (projectRef === null) {
+        const targetEnvironmentId = options?.environmentId ?? primaryEnvironmentId;
+        if (targetEnvironmentId === null) {
+          return null;
+        }
+        const draftId = newDraftId();
+        const threadId = newThreadId();
+        const placeholderProjectRef = scopeProjectRef(targetEnvironmentId, newProjectId());
+        setLogicalProjectDraftThreadId(
+          `standalone-draft:${draftId}`,
+          placeholderProjectRef,
+          draftId,
+          {
+            threadId,
+            createdAt: new Date().toISOString(),
+            branch: null,
+            worktreePath: null,
+            envMode: "local",
+            startFromOrigin: false,
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+          },
+        );
+        applyStickyState(draftId);
+        if (appExperience === "work") {
+          const stickyDraft = getComposerDraft(draftId);
+          const stickySelection = stickyDraft?.activeProvider
+            ? stickyDraft.modelSelectionByProvider[stickyDraft.activeProvider]
+            : undefined;
+          if (resolveWorkComplexity(stickySelection) === null) {
+            setModelSelection(draftId, createWorkModelSelection("normal"), {
+              replaceOptions: true,
+            });
+          }
+        }
+        await router.navigate({
+          to: "/draft/$draftId",
+          params: { draftId },
+          replace: options?.replace ?? false,
+        });
+        return { draftId, threadId };
+      }
+
       // A new thread carries the user's working mode from the thread being
       // viewed. The target project's configured model still wins; interaction
       // mode carries independently. Permissions, branch, worktree, and env mode
@@ -430,7 +536,14 @@ export function useNewThreadHandler() {
         return { draftId, threadId };
       })();
     },
-    [environmentServerConfigs, getCurrentRouteTarget, projectGroupingSettings, router],
+    [
+      appExperience,
+      getCurrentRouteTarget,
+      primaryEnvironmentId,
+      environmentServerConfigs,
+      projectGroupingSettings,
+      router,
+    ],
   );
 }
 

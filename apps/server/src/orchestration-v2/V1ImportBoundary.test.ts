@@ -14,11 +14,16 @@ const legacyTable =
 const legacyReaders = ["orchestration-v2/legacy/", "persistence/Migrations/"] as const;
 /**
  * Individual files allowed to read the V1 tables, each with its reason. Keep this
- * list short; new V1 reads belong in the importer.
+ * list short; new V1 reads belong in the importer. The fork's historical
+ * compatibility readers are read-only and do not restore the V1 runtime.
  */
 const legacyReaderFiles: Record<string, string> = {
   // Provider history for settings migration reads V1 thread sessions once at load.
   "serverSettings.ts": "one-time provider history for settings migration",
+  "memory/MemorySourceReader.ts":
+    "read-only historical memory sources with stable legacy citations and cursors",
+  "mcp/toolkits/threads/handlers.ts":
+    "read-only imported transcripts whose legacy messages have no V2 run",
 };
 const retiredPaths = [
   "orchestration",
@@ -55,7 +60,7 @@ it("keeps the V1 agent runtime and engine deleted", () => {
   assert.deepEqual(violations, []);
 });
 
-it("reads the V1 tables only from the legacy importer", () => {
+it("limits V1 table reads to the importer and documented compatibility readers", () => {
   const readers = relativeSources
     .filter(({ source }) => legacyTable.test(source))
     .map(({ path }) => path)
@@ -69,6 +74,27 @@ it("reads the V1 tables only from the legacy importer", () => {
   for (const path of Object.keys(legacyReaderFiles)) {
     const file = relativeSources.find((candidate) => candidate.path === path);
     assert.isTrue(file !== undefined && legacyTable.test(file.source), path);
+  }
+});
+
+it("keeps the documented compatibility readers read-only for V1 tables", () => {
+  const legacyMutation = new RegExp(
+    String.raw`\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE(?:\s+OR\s+\w+)?|DELETE\s+FROM|REPLACE\s+INTO)\s+[\x22\x60\[]?${legacyTable.source}`,
+    "i",
+  );
+  for (const statement of [
+    "UPDATE projection_threads SET title = ?",
+    'INSERT OR IGNORE INTO "projection_thread_messages" VALUES (?)',
+    "DELETE FROM projection_turns WHERE thread_id = ?",
+    "REPLACE INTO projection_thread_sessions VALUES (?)",
+  ]) {
+    assert.isTrue(legacyMutation.test(statement), statement);
+  }
+  assert.isFalse(legacyMutation.test("SELECT * FROM projection_thread_messages"));
+  for (const path of Object.keys(legacyReaderFiles)) {
+    const file = relativeSources.find((candidate) => candidate.path === path);
+    assert.isTrue(file !== undefined, path);
+    assert.isFalse(legacyMutation.test(file!.source), path);
   }
 });
 

@@ -1248,6 +1248,9 @@ export const layer: Layer.Layer<
           attachments: message.attachments,
           createdBy: message.createdBy,
           creationSource: message.creationSource,
+          ...(message.responseProfile === undefined
+            ? {}
+            : { responseProfile: message.responseProfile }),
           ...(message.scheduledTaskId === undefined
             ? {}
             : { scheduledTaskId: message.scheduledTaskId }),

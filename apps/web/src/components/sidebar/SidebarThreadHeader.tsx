@@ -29,9 +29,11 @@ export interface SidebarThreadHeaderProps {
   searchFieldRef?: RefObject<HTMLDivElement | null>;
   /** Without projects there is nothing to scope, so those controls stay out. */
   hasProjects: boolean;
+  isWorkExperience: boolean;
   /** The project scope combobox, rendered as the first icon of the group. */
   projectScope: ReactNode;
   onNewProject: () => void;
+  newProjectDisabled?: boolean;
   /** Receives the click so Shift+click can skip the project picker. */
   onNewThread: (event: ReactMouseEvent) => void;
   newThreadDisabled: boolean;
@@ -52,8 +54,10 @@ export interface SidebarThreadHeaderProps {
 export function SidebarThreadHeader({
   searchFieldRef,
   hasProjects,
+  isWorkExperience,
   projectScope,
   onNewProject,
+  newProjectDisabled = false,
   onNewThread,
   newThreadDisabled,
   newThreadShortcutLabel,
@@ -73,9 +77,10 @@ export function SidebarThreadHeader({
   // list; pointing aria-activedescendant at a removed option strands the
   // screen reader on nothing.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
+  const newThreadNoun = isWorkExperience ? "task" : "thread";
   const newThreadLabel = newThreadShortcutLabel
-    ? `New thread (${newThreadShortcutLabel})`
-    : "New thread";
+    ? `New ${newThreadNoun} (${newThreadShortcutLabel})`
+    : `New ${newThreadNoun}`;
 
   return (
     <div className="flex items-center gap-1">
@@ -91,8 +96,8 @@ export function SidebarThreadHeader({
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
           onKeyDown={onSearchKeyDown}
-          placeholder="Search"
-          aria-label="Search threads"
+          placeholder={isWorkExperience ? "Search tasks" : "Search"}
+          aria-label={isWorkExperience ? "Search tasks" : "Search threads"}
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={resultsVisible}
@@ -124,22 +129,24 @@ export function SidebarThreadHeader({
           hover states, and a background well reads far louder on themed
           palettes than on the base light and dark ones. */}
       <div className="flex shrink-0 items-center">
-        {hasProjects ? (
-          <>
-            {projectScope}
-            <SidebarHeaderIconButton label="Add project" onClick={onNewProject}>
-              <FolderPlusIcon />
-            </SidebarHeaderIconButton>
-          </>
+        {hasProjects ? projectScope : null}
+        {hasProjects || isWorkExperience ? (
+          <SidebarHeaderIconButton
+            label={isWorkExperience ? "Create project" : "Add project"}
+            onClick={onNewProject}
+            disabled={newProjectDisabled}
+          >
+            <FolderPlusIcon />
+          </SidebarHeaderIconButton>
         ) : null}
         <SidebarHeaderIconButton
-          label="New thread"
+          label={`New ${newThreadNoun}`}
           tooltip={
             showNewThreadInProjectHint ? (
               <span className="flex flex-col gap-0.5">
                 <span>{newThreadLabel}</span>
                 <span className="text-muted-foreground">
-                  New thread in current project: Shift+click
+                  {isWorkExperience ? "New task" : "New thread"} in current project: Shift+click
                   {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
                 </span>
               </span>

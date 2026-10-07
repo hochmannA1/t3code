@@ -7,10 +7,12 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as RcMap from "effect/RcMap";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import type {
   FilesystemBrowseInput,
   FilesystemBrowseResult,
+  ProjectEntryChangesEvent,
   ProjectEntry,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -84,6 +86,7 @@ export const WorkspaceEntriesError = Schema.Union([
   WorkspaceSearchIndex.WorkspaceSearchIndexCreateFailed,
   WorkspaceSearchIndex.WorkspaceSearchIndexScanTimedOut,
   WorkspaceSearchIndex.WorkspaceSearchIndexSearchFailed,
+  WorkspaceSearchIndex.WorkspaceSearchIndexWatchFailed,
 ]);
 export type WorkspaceEntriesError = typeof WorkspaceEntriesError.Type;
 
@@ -103,6 +106,9 @@ export class WorkspaceEntries extends Context.Service<
       input: ProjectSearchContentsInput,
     ) => Effect.Effect<ProjectSearchContentsResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
+    readonly changes: (
+      cwd: string,
+    ) => Stream.Stream<ProjectEntryChangesEvent, WorkspaceEntriesError>;
   }
 >()("t3/workspace/WorkspaceEntries") {}
 
@@ -182,6 +188,25 @@ export const make = Effect.gen(function* () {
       }
     },
   );
+
+  const changes: WorkspaceEntries["Service"]["changes"] = (cwd) =>
+    Stream.unwrap(
+      normalizeWorkspaceRoot(cwd).pipe(
+        Effect.map((normalizedCwd) =>
+          Stream.unwrap(
+            WorkspaceSearchIndex.WorkspaceSearchIndex.pipe(
+              Effect.map((searchIndex) => searchIndex.changes),
+            ),
+          ).pipe(
+            Stream.provide(
+              workspaceSearchIndexes.get(
+                WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, "paths"),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
 
   const browse: WorkspaceEntries["Service"]["browse"] = Effect.fn("WorkspaceEntries.browse")(
     function* (input) {
@@ -355,7 +380,7 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  return WorkspaceEntries.of({ browse, list, refresh, search, searchContents });
+  return WorkspaceEntries.of({ browse, changes, list, refresh, search, searchContents });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(

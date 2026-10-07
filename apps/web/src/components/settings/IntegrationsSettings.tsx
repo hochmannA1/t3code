@@ -1,3 +1,4 @@
+import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -102,6 +103,7 @@ import {
   useClientSettings,
   useClientSettingsHydrated,
   useUpdatePrimarySettings,
+  usePrimarySettings,
 } from "~/hooks/useSettings";
 
 import {
@@ -862,6 +864,40 @@ function DeviceIntegrationControls({
   );
 }
 
+function AgentAutomationAccessSetting() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <SettingsRow
+      {...searchableSetting("agent-automation-access")}
+      description="Let agents create, edit, pause, delete, and run automations in the current project. When off, agent sessions cannot use automation controls."
+      resetAction={
+        settings.enableAgentAutomationAccess !==
+        DEFAULT_UNIFIED_SETTINGS.enableAgentAutomationAccess ? (
+          <SettingResetButton
+            label="agent automation access"
+            onClick={() =>
+              updateSettings({
+                enableAgentAutomationAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentAutomationAccess,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.enableAgentAutomationAccess}
+          onCheckedChange={(checked) =>
+            updateSettings({ enableAgentAutomationAccess: Boolean(checked) })
+          }
+          aria-label="Let agents manage automations"
+        />
+      }
+    />
+  );
+}
+
 function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled: boolean }) {
   const autoShow = useClientSettings((settings) => settings.browserAutoShowFloatingPreview);
   const updateSettings = useUpdatePrimarySettings();
@@ -1462,6 +1498,9 @@ export function IntegrationsSettingsPanel() {
         ) : (
           previewDefaults
         )}
+      </SettingsSection>
+      <SettingsSection id="automations" title="Automations">
+        <AgentAutomationAccessSetting />
       </SettingsSection>
       <DeviceIntegrationSettings />
     </SettingsPageContainer>

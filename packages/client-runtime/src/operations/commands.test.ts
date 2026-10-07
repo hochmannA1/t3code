@@ -40,6 +40,7 @@ import {
   archiveThread,
   cancelQueuedRun,
   createProject,
+  createStandaloneProject,
   dismissThreadUserInput,
   editQueuedRun,
   forkThreadFromRun,
@@ -74,6 +75,7 @@ const TARGET = new PrimaryConnectionTarget({
 const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(function* (input: {
   readonly commands: OrchestrationV2Command[];
   readonly projects: ProjectMutation[];
+  readonly standaloneProjectRequests?: Array<{ readonly request: string }>;
   readonly launches?: OrchestrationV2ThreadLaunchInput[];
   readonly projection?: OrchestrationV2ThreadProjection;
   readonly projectionRequests?: ThreadId[];
@@ -99,6 +101,15 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
           threadId: launchInput.threadId ?? v2ThreadId,
           projection: input.projection ?? v2Projection,
           resumed: false,
+        };
+      }),
+    [WS_METHODS.projectsCreateStandalone]: (request: { readonly request: string }) =>
+      Effect.sync(() => {
+        input.standaloneProjectRequests?.push(request);
+        return {
+          projectId: ProjectId.make("project-standalone"),
+          title: "standalone-project",
+          workspaceRoot: "/workspace/standalone-project",
         };
       }),
     [WS_METHODS.projectsMutate]: (mutation: ProjectMutation) =>
@@ -148,6 +159,28 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("V2 environment commands", () => {
+  it.effect("allocates a standalone project through its RPC", () =>
+    Effect.gen(function* () {
+      const requests: Array<{ readonly request: string }> = [];
+      const supervisor = yield* makeSupervisor({
+        commands: [],
+        projects: [],
+        standaloneProjectRequests: requests,
+      });
+
+      const result = yield* createStandaloneProject({ request: "Build a Project" }).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+      );
+
+      expect(requests).toEqual([{ request: "Build a Project" }]);
+      expect(result).toEqual({
+        projectId: "project-standalone",
+        title: "standalone-project",
+        workspaceRoot: "/workspace/standalone-project",
+      });
+    }),
+  );
+
   it.effect("routes projects through the event-sourced project transport", () =>
     Effect.gen(function* () {
       const projects: ProjectMutation[] = [];
@@ -333,6 +366,7 @@ describe("V2 environment commands", () => {
         },
         runtimeMode: "full-access",
         interactionMode: "default",
+        responseProfile: "work",
         titleSeed: "Continue here",
         bootstrap: {
           createThread: {
@@ -352,6 +386,7 @@ describe("V2 environment commands", () => {
         threadId: v2ThreadId,
         title: "Continue here",
         generateTitle: true,
+        initialMessage: { responseProfile: "work" },
         workspaceStrategy: {
           type: "existing_worktree",
           worktreePath: "/workspace/project-worktrees/feature",
@@ -981,6 +1016,7 @@ describe("V2 environment commands", () => {
         },
         runtimeMode: "full-access",
         interactionMode: "default",
+        responseProfile: "code",
         dispatchMode: "start",
       }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
 
@@ -989,6 +1025,7 @@ describe("V2 environment commands", () => {
         {
           type: "message.dispatch",
           threadId: v2ThreadId,
+          responseProfile: "code",
           dispatchMode: { type: "start_immediately" },
         },
       ]);

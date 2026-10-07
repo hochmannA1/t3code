@@ -78,6 +78,10 @@ run before the prompt. They reject profiles with such configuration before launc
 instructions and tool denial do not create a native sandbox.
 See [helper constraints](../../apps/server/src/textGeneration/AntigravityTextGeneration.ts).
 
+Provider sessions also receive T3's MCP tools, including read-only
+[thread history tools](./agent-thread-tools.md). The same server-side tools serve agents controlled
+through web, desktop, and mobile clients.
+
 ## Provider updates run only through the owning installer
 
 A package manager runs only when the resolved executable's path proves it owns the install. Homebrew

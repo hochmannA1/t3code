@@ -591,6 +591,30 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     ).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect(
+    "persists the dedicated memory model and never replaces it when its provider is disabled",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const modelSelection = {
+          instanceId: ProviderInstanceId.make("memory-only"),
+          model: "custom-model",
+        };
+        yield* serverSettings.updateSettings({
+          memory: { modelSelection, generateMemories: false },
+        });
+        const next = yield* serverSettings.updateSettings({ memory: { dreaming: false } });
+        const persisted = yield* fileSystem.readFileString(serverConfig.settingsPath);
+        const decoded = yield* decodeServerSettingsJson(persisted);
+        assert.deepEqual(next.memory.modelSelection, modelSelection);
+        assert.deepEqual(decoded.memory.modelSelection, modelSelection);
+        assert.isFalse(decoded.memory.generateMemories);
+        assert.isFalse(decoded.memory.dreaming);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

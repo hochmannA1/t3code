@@ -18,9 +18,10 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { useUiStateStore } from "~/uiStateStore";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -35,43 +36,53 @@ function ChatIndexRouteView() {
 }
 
 /**
- * Landing on the index route drops straight into a draft thread for the most
- * recently active project, so the first screen is a prompt instead of a dead
- * end. Falls back to an add-project hero when no project exists yet.
+ * Work opens a projectless draft as soon as its environment is known. Code
+ * waits for project discovery to select the most recently active project.
  */
 function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const ready = appExperience === "work" ? primaryEnvironmentId !== null : bootstrapped;
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
   const mostRecentProject = useMemo(
     () =>
-      bootstrapped
+      appExperience === "code" && bootstrapped
         ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
         : null,
-    [bootstrapped, projects, threads],
+    [appExperience, bootstrapped, projects, threads],
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    if (!ready || (appExperience === "code" && mostRecentProject === null) || startingRef.current) {
       return;
     }
     startingRef.current = true;
-    void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
-      replace: true,
-    }).catch(() => {
-      startingRef.current = false;
-      setStartState((state) => ({ ...state, failed: true }));
-    });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+    const projectRef =
+      appExperience === "work" || mostRecentProject === null
+        ? null
+        : scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
+    void handleNewThread(projectRef, { replace: true })
+      .then((result) => {
+        if (result !== null) return;
+        startingRef.current = false;
+        setStartState((state) => ({ ...state, failed: true }));
+      })
+      .catch(() => {
+        startingRef.current = false;
+        setStartState((state) => ({ ...state, failed: true }));
+      });
+  }, [appExperience, ready, handleNewThread, mostRecentProject, startState.retryRequest]);
 
-  if (!bootstrapped) {
+  if (!ready) {
     return null;
   }
-  if (mostRecentProject !== null) {
+  if (appExperience === "work" || mostRecentProject !== null) {
     return startState.failed ? (
       <DraftStartError
         onRetry={() => {

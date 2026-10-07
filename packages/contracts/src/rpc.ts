@@ -1,5 +1,30 @@
 import { OrchestrationDispatchCommandError } from "./orchestrationDispatch.ts";
 import {
+  MemoryError,
+  MemoryForgetInput,
+  MemoryGetRecommendationsInput,
+  MemoryGetRecommendationsResult,
+  MemorySetThreadPolicyInput,
+  MemoryState,
+  MemoryStateInput,
+  MemoryThreadPolicy,
+  MemoryUpsertInput,
+  MemoryEntry,
+} from "./memory.ts";
+import {
+  Automation,
+  AutomationCreateInput,
+  AutomationDeleteResult,
+  AutomationError,
+  AutomationIdInput,
+  AutomationListInput,
+  AutomationListResult,
+  AutomationListRunsInput,
+  AutomationListRunsResult,
+  AutomationRun,
+  AutomationUpdateInput,
+} from "./automation.ts";
+import {
   ChatGptReconnectProfileInput,
   ChatGptReconnectProfile,
   ChatGptImportProfileInput,
@@ -199,6 +224,10 @@ import {
   ProjectCreateNewInput,
   ProjectCreateNewResult,
   ProjectEnsureScratchResult,
+  ProjectEntryChangesEvent,
+  StandaloneProjectAllocationError,
+  StandaloneProjectCreateInput,
+  StandaloneProjectCreateResult,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -343,11 +372,30 @@ import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 
 export const WS_METHODS = {
+  // Memory and scheduled prompt automations
+  memoryGetState: "memory.getState",
+  memoryGetRecommendations: "memory.getRecommendations",
+  memoryUpsert: "memory.upsert",
+  memoryForget: "memory.forget",
+  memorySetThreadPolicy: "memory.setThreadPolicy",
+  memoryRunNow: "memory.runNow",
+  automationsList: "automations.list",
+  automationsGet: "automations.get",
+  automationsCreate: "automations.create",
+  automationsUpdate: "automations.update",
+  automationsDelete: "automations.delete",
+  automationsPause: "automations.pause",
+  automationsResume: "automations.resume",
+  automationsRunNow: "automations.runNow",
+  automationsListRuns: "automations.listRuns",
+
   // Project registry methods
   projectsList: "projects.list",
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
   projectsListEntries: "projects.listEntries",
+  projectsRefreshEntries: "projects.refreshEntries",
+  projectsSubscribeEntryChanges: "projects.subscribeEntryChanges",
   projectsReadFile: "projects.readFile",
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
@@ -355,6 +403,7 @@ export const WS_METHODS = {
   projectsMutate: "projects.mutate",
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
+  projectsCreateStandalone: "projects.createStandalone",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -555,6 +604,85 @@ const WsServerRemoveKeybindingRpc = Rpc.make(WS_METHODS.serverRemoveKeybinding, 
   payload: ServerRemoveKeybindingInput,
   success: ServerRemoveKeybindingResult,
   error: Schema.Union([KeybindingsConfigError, EnvironmentAuthorizationError]),
+});
+
+const MemoryRpcError = Schema.Union([MemoryError, EnvironmentAuthorizationError]);
+const WsMemoryGetStateRpc = Rpc.make(WS_METHODS.memoryGetState, {
+  payload: MemoryStateInput,
+  success: MemoryState,
+  error: MemoryRpcError,
+});
+const WsMemoryGetRecommendationsRpc = Rpc.make(WS_METHODS.memoryGetRecommendations, {
+  payload: MemoryGetRecommendationsInput,
+  success: MemoryGetRecommendationsResult,
+  error: EnvironmentAuthorizationError,
+});
+const WsMemoryUpsertRpc = Rpc.make(WS_METHODS.memoryUpsert, {
+  payload: MemoryUpsertInput,
+  success: MemoryEntry,
+  error: MemoryRpcError,
+});
+const WsMemoryForgetRpc = Rpc.make(WS_METHODS.memoryForget, {
+  payload: MemoryForgetInput,
+  success: Schema.Struct({}),
+  error: MemoryRpcError,
+});
+const WsMemorySetThreadPolicyRpc = Rpc.make(WS_METHODS.memorySetThreadPolicy, {
+  payload: MemorySetThreadPolicyInput,
+  success: MemoryThreadPolicy,
+  error: MemoryRpcError,
+});
+const WsMemoryRunNowRpc = Rpc.make(WS_METHODS.memoryRunNow, {
+  payload: Schema.Struct({}),
+  success: Schema.Struct({}),
+  error: MemoryRpcError,
+});
+
+const AutomationRpcError = Schema.Union([AutomationError, EnvironmentAuthorizationError]);
+const WsAutomationsListRpc = Rpc.make(WS_METHODS.automationsList, {
+  payload: AutomationListInput,
+  success: AutomationListResult,
+  error: AutomationRpcError,
+});
+const WsAutomationsGetRpc = Rpc.make(WS_METHODS.automationsGet, {
+  payload: AutomationIdInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+const WsAutomationsCreateRpc = Rpc.make(WS_METHODS.automationsCreate, {
+  payload: AutomationCreateInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+const WsAutomationsUpdateRpc = Rpc.make(WS_METHODS.automationsUpdate, {
+  payload: AutomationUpdateInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+const WsAutomationsDeleteRpc = Rpc.make(WS_METHODS.automationsDelete, {
+  payload: AutomationIdInput,
+  success: AutomationDeleteResult,
+  error: AutomationRpcError,
+});
+const WsAutomationsPauseRpc = Rpc.make(WS_METHODS.automationsPause, {
+  payload: AutomationIdInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+const WsAutomationsResumeRpc = Rpc.make(WS_METHODS.automationsResume, {
+  payload: AutomationIdInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+const WsAutomationsRunNowRpc = Rpc.make(WS_METHODS.automationsRunNow, {
+  payload: AutomationIdInput,
+  success: AutomationRun,
+  error: AutomationRpcError,
+});
+const WsAutomationsListRunsRpc = Rpc.make(WS_METHODS.automationsListRuns, {
+  payload: AutomationListRunsInput,
+  success: AutomationListRunsResult,
+  error: AutomationRpcError,
 });
 
 const WsServerProbeRpc = Rpc.make(WS_METHODS.serverProbe, {
@@ -1150,6 +1278,19 @@ const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries, {
   error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
 });
 
+const WsProjectsRefreshEntriesRpc = Rpc.make(WS_METHODS.projectsRefreshEntries, {
+  payload: ProjectListEntriesInput,
+  success: ProjectListEntriesResult,
+  error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectsSubscribeEntryChangesRpc = Rpc.make(WS_METHODS.projectsSubscribeEntryChanges, {
+  payload: ProjectListEntriesInput,
+  success: ProjectEntryChangesEvent,
+  error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
   payload: ProjectReadFileInput,
   success: ProjectReadFileResult,
@@ -1180,6 +1321,12 @@ const WsProjectsCreateNewRpc = Rpc.make(WS_METHODS.projectsCreateNew, {
   payload: ProjectCreateNewInput,
   success: ProjectCreateNewResult,
   error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectsCreateStandaloneRpc = Rpc.make(WS_METHODS.projectsCreateStandalone, {
+  payload: StandaloneProjectCreateInput,
+  success: StandaloneProjectCreateResult,
+  error: Schema.Union([StandaloneProjectAllocationError, EnvironmentAuthorizationError]),
 });
 
 const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
@@ -1742,6 +1889,21 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  WsMemoryGetStateRpc,
+  WsMemoryGetRecommendationsRpc,
+  WsMemoryUpsertRpc,
+  WsMemoryForgetRpc,
+  WsMemorySetThreadPolicyRpc,
+  WsMemoryRunNowRpc,
+  WsAutomationsListRpc,
+  WsAutomationsGetRpc,
+  WsAutomationsCreateRpc,
+  WsAutomationsUpdateRpc,
+  WsAutomationsDeleteRpc,
+  WsAutomationsPauseRpc,
+  WsAutomationsResumeRpc,
+  WsAutomationsRunNowRpc,
+  WsAutomationsListRunsRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -1841,11 +2003,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectCloneRetryRpc,
   WsSubscribeProjectClonesRpc,
   WsProjectsListEntriesRpc,
+  WsProjectsRefreshEntriesRpc,
+  WsProjectsSubscribeEntryChangesRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsEnsureScratchRpc,
   WsProjectsCreateNewRpc,
+  WsProjectsCreateStandaloneRpc,
   WsProjectsWriteFileRpc,
   WsProjectsMutateRpc,
   WsShellOpenInEditorRpc,

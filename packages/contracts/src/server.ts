@@ -28,6 +28,7 @@ import { RuntimeMode } from "./providerPolicy.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
+import { AutomationCapabilities } from "./automation.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -674,6 +675,8 @@ export const ServerConfig = Schema.Struct({
    * and it stays absent for subscribers that did not opt in.
    */
   environmentThemes: Schema.optional(Schema.Array(EnvironmentTheme)),
+  /** Scheduled prompt automation support. Absent on older servers. */
+  automationCapabilities: Schema.optionalKey(AutomationCapabilities),
   /**
    * Quota reported by configured `usageLimitSources`. Like themes, never in
    * a snapshot: the source stream emits the current set on subscribe, and it

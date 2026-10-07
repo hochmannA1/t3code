@@ -7,7 +7,7 @@ import { ThreadRouteView } from "../components/ThreadRouteView";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
-import { useProjects } from "../state/entities";
+import { useActiveEnvironmentId, useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
@@ -26,7 +26,13 @@ import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { primaryServerKeybindingsAtom } from "~/state/server";
+import {
+  environmentServerConfigsAtom,
+  primaryServerKeybindingsAtom,
+  serverEnvironment,
+} from "~/state/server";
+import { useEnvironmentQuery } from "../state/query";
+import { useUiStateStore } from "~/uiStateStore";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -35,6 +41,7 @@ function ChatRouteGlobalShortcuts() {
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const appExperience = useUiStateStore((store) => store.appExperience);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -98,6 +105,10 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.newLocal") {
         event.preventDefault();
         event.stopPropagation();
+        if (appExperience === "work" || projectGroupCount === 0) {
+          void handleNewThread(null);
+          return;
+        }
         void startNewThreadFromContext({
           activeDraftThread,
           activeThread: activeThread ?? undefined,
@@ -124,6 +135,10 @@ function ChatRouteGlobalShortcuts() {
         // The default sidebar routes creation through the command palette
         // whenever there is a real choice to make; the legacy sidebar (and
         // single-project setups) keep the immediate contextual create.
+        if (appExperience === "work" || projectGroupCount === 0) {
+          void handleNewThread(null);
+          return;
+        }
         if (!legacySidebarEnabled && projectGroupCount > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;
@@ -188,6 +203,7 @@ function ChatRouteGlobalShortcuts() {
   }, [
     activeDraftThread,
     activeThread,
+    appExperience,
     clearSelection,
     handleNewThread,
     keybindings,
@@ -206,6 +222,22 @@ function ChatRouteGlobalShortcuts() {
   return null;
 }
 
+function DraftRecommendationPrewarmer() {
+  const activeEnvironmentId = useActiveEnvironmentId();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const environmentId = activeEnvironmentId ?? primaryEnvironmentId;
+  const configs = useAtomValue(environmentServerConfigsAtom);
+  const appExperience = useUiStateStore((store) => store.appExperience);
+  useEnvironmentQuery(
+    appExperience === "work" &&
+      environmentId !== null &&
+      configs.get(environmentId)?.environment.capabilities.memoryRecommendations === true
+      ? serverEnvironment.memoryGetRecommendations({ environmentId, input: { projectId: null } })
+      : null,
+  );
+  return null;
+}
+
 function ChatRouteLayout() {
   // Both thread routes render here, not in their own leaf components, so the
   // draft-to-thread promotion keeps one ChatView mounted across the swap.
@@ -216,6 +248,7 @@ function ChatRouteLayout() {
   return (
     <>
       <ChatRouteGlobalShortcuts />
+      <DraftRecommendationPrewarmer />
       {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
     </>
   );

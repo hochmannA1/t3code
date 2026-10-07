@@ -16,6 +16,8 @@ const ALL_MCP_CAPABILITIES = [
   "worktree",
   "device",
   "pull-requests",
+  "automations",
+  "memory",
 ] as const;
 export type McpCapability = (typeof ALL_MCP_CAPABILITIES)[number];
 
@@ -121,3 +123,13 @@ export const requireThreadScope = (scope: McpInvocationScope, operation: string)
   scope.thread === undefined
     ? Effect.fail(threadCallerRequired(operation))
     : Effect.succeed(scope as McpThreadInvocationScope);
+
+export const requireAutomationCapability = () =>
+  requireMcpCapability("automations").pipe(
+    Effect.flatMap((scope) => requireThreadScope(scope, "automation tools")),
+  );
+
+export const requireMemoryCapability = () =>
+  requireMcpCapability("memory").pipe(
+    Effect.flatMap((scope) => requireThreadScope(scope, "memory tools")),
+  );

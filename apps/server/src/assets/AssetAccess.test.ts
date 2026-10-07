@@ -126,6 +126,46 @@ const layerTest = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
+  it.effect("downloads arbitrary files and directories using exact signed URLs", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-download-" });
+      yield* fs.writeFileString(path.join(root, "report.csv"), "a,b\n1,2");
+      yield* fs.makeDirectory(path.join(root, "folder"));
+      for (const name of ["report.csv", "folder"]) {
+        const result = yield* issueAssetUrl({
+          resource: { _tag: "workspace-download", cwd: root, path: name },
+        });
+        const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+        const separator = suffix.indexOf("/");
+        const token = suffix.slice(0, separator);
+        const asset = yield* resolveAsset(token, suffix.slice(separator + 1));
+        expect(asset).toMatchObject({
+          kind: "file",
+          download: true,
+          fileName: name === "folder" ? "folder.zip" : name,
+        });
+        if (asset?.kind !== "file") throw new Error("Expected a workspace file asset");
+        if (name === "folder") {
+          expect(asset?.directory).toBe(true);
+          const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset!));
+          expect(response.headers.get("content-type")).toBe("application/zip");
+          const bytes = yield* Effect.promise(() => response.arrayBuffer());
+          expect(new Uint8Array(bytes).slice(0, 2)).toEqual(new Uint8Array([80, 75]));
+          const head = HttpServerResponse.toWeb(
+            yield* assetFileResponse(asset!, undefined, undefined, "HEAD"),
+          );
+          expect(yield* Effect.promise(() => head.text())).toBe("");
+        } else {
+          const response = yield* assetFileResponse(asset!);
+          expect(response.headers["content-disposition"]).toContain('filename="report.csv"');
+        }
+        expect(yield* resolveAsset(token, "other.csv")).toBeNull();
+        expect(yield* resolveAsset(token + "tampered", name)).toBeNull();
+      }
+    }).pipe(Effect.provide(layerTest)),
+  );
   it.effect("loads private media immediately after login and reuses the found credential", () => {
     let lookups = 0;
     const authorizations: Array<string | undefined> = [];
@@ -929,6 +969,31 @@ describe("AssetAccess", () => {
       expect(yield* resolveAsset(token, "ignored.png")).toEqual({
         kind: "file",
         path: attachmentPath,
+      });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("marks non-image attachment capabilities for download", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const attachmentId = "thread-1-00000000-0000-4000-8000-000000000002-pdf";
+      const attachmentPath = path.join(config.attachmentsDir, `${attachmentId}.pdf`);
+      yield* fileSystem.makeDirectory(config.attachmentsDir, { recursive: true });
+      yield* fileSystem.writeFile(attachmentPath, new Uint8Array([1, 2, 3]));
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "attachment", attachmentId },
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+      const token = suffix.slice(0, separatorIndex);
+
+      expect(yield* resolveAsset(token, "ignored.pdf")).toEqual({
+        kind: "file",
+        path: attachmentPath,
+        download: true,
       });
     }).pipe(Effect.provide(layerTest)),
   );

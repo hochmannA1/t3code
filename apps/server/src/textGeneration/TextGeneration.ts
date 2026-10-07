@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import type {
   BranchNamingOptions,
   ChatAttachment,
+  MemoryGetRecommendationsResult,
   ModelSelection,
   ProviderInstanceId,
 } from "@t3tools/contracts";
@@ -14,6 +15,8 @@ import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
+import type { MemoryGenerationInput, MemoryGenerationResult } from "./MemoryGeneration.ts";
+import type { MemoryRecommendationGenerationInput } from "./MemoryRecommendationGeneration.ts";
 
 export interface CommitMessageGenerationInput {
   cwd: string;
@@ -87,6 +90,14 @@ export interface ThreadTitleGenerationResult {
 export class TextGeneration extends Context.Service<
   TextGeneration,
   {
+    readonly generateMemory: (
+      input: MemoryGenerationInput,
+    ) => Effect.Effect<MemoryGenerationResult, TextGenerationError>;
+
+    readonly generateMemoryRecommendations: (
+      input: MemoryRecommendationGenerationInput,
+    ) => Effect.Effect<MemoryGetRecommendationsResult, TextGenerationError>;
+
     /**
      * Generate a commit message from staged change context.
      */
@@ -116,6 +127,8 @@ export class TextGeneration extends Context.Service<
 >()("t3/textGeneration/TextGeneration") {}
 
 type TextGenerationOp =
+  | "generateMemory"
+  | "generateMemoryRecommendations"
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
@@ -144,6 +157,18 @@ export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const sourceControl = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   return TextGeneration.of({
+    generateMemory: (input) =>
+      resolveInstance(registry, "generateMemory", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateMemory(input)),
+      ),
+    generateMemoryRecommendations: (input) =>
+      resolveInstance(
+        registry,
+        "generateMemoryRecommendations",
+        input.modelSelection.instanceId,
+      ).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateMemoryRecommendations(input)),
+      ),
     generateCommitMessage: (input) =>
       resolveInstance(registry, "generateCommitMessage", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateCommitMessage(input)),

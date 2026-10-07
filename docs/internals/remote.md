@@ -17,6 +17,15 @@ features target the repository a fork tracks. A fork also reports its own
 `origin`, and clients group and label by that, so a fork never collapses into a
 checkout of its upstream.
 
+Production JavaScript resolves lazy-chunk preloads and imported assets relative to the importing
+bundle. Keep this behavior in the web build: origin-root `/assets/` preloads bypass a reverse proxy's
+public path prefix and can trigger a reload when opening Files or another lazy panel. Integrations
+hosting T3 below a prefix must also keep the HTML entry assets rooted at that public prefix when
+reloading a nested thread route, and configure the router and API endpoints for the same prefix.
+
+T3 has one runtime boundary: a client talks to a T3 server over HTTP and WebSocket, and the server
+owns orchestration, providers, terminals, git, and filesystem operations. Remoteness is expressed at
+the connection layer, never by splitting the runtime.
 [Environment ID initialization](../../apps/server/src/environment/ServerEnvironment.ts)
 must publish a complete ID atomically. Repair of an empty ID file retains a
 recovery file so concurrent or delayed initializers choose the same winner.

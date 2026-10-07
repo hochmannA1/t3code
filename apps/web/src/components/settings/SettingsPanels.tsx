@@ -1,3 +1,4 @@
+import { MemorySettingsSection } from "./MemorySettings";
 import { SettingsGroup } from "./SettingsGroup";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
@@ -655,6 +656,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
         ? ["Agent browser access"]
         : []),
+      ...(settings.enableAgentAutomationAccess !==
+      DEFAULT_UNIFIED_SETTINGS.enableAgentAutomationAccess
+        ? ["Agent automation access"]
+        : []),
     ],
     [
       isTextGenerationModelDirty,
@@ -671,6 +676,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffColorScheme,
       settings.chatWidth,
       settings.enableAgentBrowserAccess,
+      settings.enableAgentAutomationAccess,
       settings.confirmQuit,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
@@ -848,6 +854,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       // name, so a user restoring defaults is told the agent regains access
       // rather than discovering it later.
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
+      enableAgentAutomationAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentAutomationAccess,
     });
     onRestored?.();
   }, [
@@ -3223,7 +3230,7 @@ export function GeneralSettingsPanel() {
           serverScoped
           settingKeys={["textGenerationModelSelection"]}
           {...searchableSetting("text-generation-model")}
-          description="Used for thread titles and other generated text on connected devices with this provider. Source control can override it."
+          description="Used for thread titles and memory recommendations and other generated text on connected devices with this provider. Source control can override it."
           resetAction={
             hasServerTargets && isTextGenerationModelDirty ? (
               <SettingResetButton
@@ -3329,6 +3336,8 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+
+      <MemorySettingsSection />
 
       <SettingsSection id="about" title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

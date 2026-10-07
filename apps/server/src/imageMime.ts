@@ -113,6 +113,47 @@ export function parseBase64DataUrl(
   return { mimeType, base64 };
 }
 
+export const SAFE_FILE_EXTENSIONS = new Set([
+  ".csv",
+  ".diff",
+  ".docx",
+  ".gz",
+  ".json",
+  ".jsonl",
+  ".log",
+  ".md",
+  ".patch",
+  ".pdf",
+  ".pptx",
+  ".tar",
+  ".toml",
+  ".tsv",
+  ".txt",
+  ".xlsx",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".zip",
+]);
+
+export function inferFileExtension(input: { mimeType: string; fileName?: string }): string {
+  const fileName = input.fileName?.trim() ?? "";
+  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
+  const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
+  if (SAFE_FILE_EXTENSIONS.has(fileNameExtension)) {
+    return fileNameExtension;
+  }
+
+  // Mime.getExtension returns dot-less extensions ("pdf"), the sets hold
+  // dotted ones (".pdf").
+  const fromMimeExtension = Option.map(Mime.getExtension(input.mimeType), (ext) => `.${ext}`);
+  if (Option.isSome(fromMimeExtension) && SAFE_FILE_EXTENSIONS.has(fromMimeExtension.value)) {
+    return fromMimeExtension.value;
+  }
+
+  return ".bin";
+}
+
 export function inferImageExtension(input: { mimeType: string; fileName?: string }): string {
   const key = input.mimeType.toLowerCase();
   const fromMime = Object.hasOwn(IMAGE_EXTENSION_BY_MIME_TYPE, key)

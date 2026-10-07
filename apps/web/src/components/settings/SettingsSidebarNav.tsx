@@ -48,6 +48,7 @@ import {
   type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
+import { useUiStateStore } from "~/uiStateStore";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
 
@@ -107,19 +108,31 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 }
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+  const appExperience = useUiStateStore((store) => store.appExperience);
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
   const navItems = SETTINGS_NAV_ITEMS.filter(
-    (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
+    (item) =>
+      (item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch)) &&
+      (appExperience === "code" ||
+        (item.to !== "/settings/keybindings" && item.to !== "/settings/source-control")),
   );
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const searchableItems = useAvailableSettingsSearchItems(scopeSearch);
-  const results = useMemo(() => searchSettings(query, searchableItems), [query, searchableItems]);
+  const results = useMemo(
+    () =>
+      searchSettings(query, searchableItems).filter(
+        (item) =>
+          appExperience === "code" ||
+          (item.to !== "/settings/keybindings" && item.to !== "/settings/source-control"),
+      ),
+    [query, searchableItems, appExperience],
+  );
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
 

@@ -1,10 +1,12 @@
 import {
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  EnvironmentAuthenticatedPrincipal,
   ThreadId,
   TurnItemId,
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -31,8 +33,14 @@ import {
 } from "./threadHistoryPaging.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
+import type { ProjectGrant } from "../KaraProjectGrant.ts";
+import { guardedProjectRoot } from "../KaraSharedFilesystem.ts";
 import { buildActiveShellSnapshot } from "./ShellStream.ts";
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
+
+class SharedProjectRootUnavailable extends Data.TaggedError("SharedProjectRootUnavailable")<{
+  readonly cause: unknown;
+}> {}
 
 function isThreadNotFound(error: unknown): boolean {
   return (
@@ -74,6 +82,52 @@ export const layer = HttpApiBuilder.group(
     const projectStore = yield* ProjectStore.ProjectStoreV2;
     const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
 
+    const currentKaraProjectSession = Effect.fnUntraced(function* () {
+      const principal = yield* EnvironmentAuthenticatedPrincipal;
+      return principal as typeof principal & { readonly karaProjectScope?: ProjectGrant };
+    });
+
+    const requireKaraProjectRoot = Effect.fnUntraced(function* (
+      project: OrchestrationProjectShell,
+      projects: ReadonlyArray<OrchestrationProjectShell>,
+    ) {
+      yield* Effect.tryPromise({
+        try: () => guardedProjectRoot(project, projects),
+        catch: (cause) => new SharedProjectRootUnavailable({ cause }),
+      }).pipe(Effect.catch(() => failEnvironmentNotFound("thread_not_found")));
+    });
+
+    const requireKaraProjectThreadMembership = Effect.fnUntraced(function* (threadId: string) {
+      const session = yield* currentKaraProjectSession();
+      const grant = session.karaProjectScope;
+      if (!grant) return;
+      const active = yield* threadManagement
+        .getShellSnapshot({ location: "active" })
+        .pipe(
+          Effect.catch((cause) => failEnvironmentInternal("orchestration_snapshot_failed", cause)),
+        );
+      const archived = yield* threadManagement
+        .getShellSnapshot({ location: "archive" })
+        .pipe(
+          Effect.catch((cause) => failEnvironmentInternal("orchestration_snapshot_failed", cause)),
+        );
+      if (
+        ![...active.threads, ...archived.threads].some(
+          (thread) => thread.id === threadId && thread.projectId === grant.projectId,
+        )
+      ) {
+        return yield* failEnvironmentNotFound("thread_not_found");
+      }
+      const projects = yield* projectStore
+        .listShells()
+        .pipe(
+          Effect.catch((cause) => failEnvironmentInternal("orchestration_snapshot_failed", cause)),
+        );
+      const project = projects.find((entry) => entry.id === grant.projectId);
+      if (!project) return yield* failEnvironmentNotFound("thread_not_found");
+      yield* requireKaraProjectRoot(project, projects);
+    });
+
     const enrichProjectShells = Effect.fn("http.orchestration.enrichProjectShells")(
       (projects: ReadonlyArray<OrchestrationProjectShell>) =>
         Effect.forEach(
@@ -104,8 +158,23 @@ export const layer = HttpApiBuilder.group(
           });
         }),
       );
-      const projects = yield* enrichProjectShells(base.projects);
-      return { ...base, projects };
+      const session = yield* currentKaraProjectSession();
+      const grant = session.karaProjectScope;
+      const selectedProjects = grant
+        ? base.projects.filter((project) => project.id === grant.projectId)
+        : base.projects;
+      if (grant && selectedProjects.length !== 1)
+        return yield* failEnvironmentNotFound("thread_not_found");
+      if (grant) yield* requireKaraProjectRoot(selectedProjects[0]!, base.projects);
+      const projects = yield* enrichProjectShells(selectedProjects);
+      return grant
+        ? {
+            ...base,
+            projects,
+            threads: base.threads.filter((thread) => thread.projectId === grant.projectId),
+            archivedThreads: [],
+          }
+        : { ...base, projects };
     });
 
     const loadThreadSnapshot = Effect.fn("http.orchestration.loadThreadSnapshot")(function* (
@@ -115,6 +184,7 @@ export const layer = HttpApiBuilder.group(
         | "orchestration_thread_bounded_snapshot_failed"
         | "orchestration_thread_history_failed",
     ) {
+      yield* requireKaraProjectThreadMembership(threadId);
       return yield* threadManagement.getThreadSnapshot(threadId).pipe(
         Effect.map((snapshot) => ({
           ...snapshot,
@@ -141,6 +211,10 @@ export const layer = HttpApiBuilder.group(
           typeof threadManagement.getThreadSnapshotWindow
         >[1]["anchorThreadId"],
       ) {
+        yield* requireKaraProjectThreadMembership(threadId);
+        if (anchorThreadId !== undefined && anchorThreadId !== threadId) {
+          yield* requireKaraProjectThreadMembership(anchorThreadId);
+        }
         return yield* threadManagement
           .getThreadSnapshotWindow(threadId, {
             rowLimit: THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,

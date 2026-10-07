@@ -279,6 +279,33 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
 });
 
 it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
+  it.effect("rejects memory jobs before starting a provider process", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const memoryFailure = yield* fixture.textGeneration
+        .generateMemory({
+          cwd: fixture.projectDirectory,
+          modelSelection,
+          mode: "dream",
+          sources: [],
+        })
+        .pipe(Effect.flip);
+      const recommendationsFailure = yield* fixture.textGeneration
+        .generateMemoryRecommendations({
+          cwd: fixture.projectDirectory,
+          modelSelection,
+          project: null,
+          memories: [],
+        })
+        .pipe(Effect.flip);
+      expect(memoryFailure.operation).toBe("generateMemory");
+      expect(recommendationsFailure.operation).toBe("generateMemoryRecommendations");
+      expect(memoryFailure.detail).toContain("does not support isolated memory");
+      expect(fixture.state.workspaces).toEqual([]);
+      expect(fixture.state.prompts).toEqual([]);
+    }),
+  );
+
   it.effect(
     "generates all helper types in empty workspaces and removes only owned session files",
     () =>

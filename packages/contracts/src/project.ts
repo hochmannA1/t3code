@@ -320,6 +320,11 @@ export const ProjectListEntriesResult = Schema.Struct({
 });
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
+export const ProjectEntryChangesEvent = Schema.Struct({
+  revision: NonNegativeInt,
+});
+export type ProjectEntryChangesEvent = typeof ProjectEntryChangesEvent.Type;
+
 export const ProjectEntriesFailure = Schema.Literals([
   "workspace_root_not_found",
   "workspace_root_create_failed",
@@ -328,6 +333,7 @@ export const ProjectEntriesFailure = Schema.Literals([
   "search_index_create_failed",
   "search_index_scan_timed_out",
   "search_index_search_failed",
+  "search_index_watch_failed",
   "directory_list_failed",
 ]);
 export type ProjectEntriesFailure = typeof ProjectEntriesFailure.Type;
@@ -535,6 +541,26 @@ export const ProjectCreateNewResult = Schema.Struct({
   commitError: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type ProjectCreateNewResult = typeof ProjectCreateNewResult.Type;
+
+export const StandaloneProjectCreateInput = Schema.Struct({
+  request: TrimmedNonEmptyString,
+});
+export type StandaloneProjectCreateInput = typeof StandaloneProjectCreateInput.Type;
+
+export const StandaloneProjectCreateResult = Schema.Struct({
+  projectId: ProjectId,
+  title: Schema.String,
+  workspaceRoot: Schema.String,
+});
+export type StandaloneProjectCreateResult = typeof StandaloneProjectCreateResult.Type;
+
+export class StandaloneProjectAllocationError extends Schema.TaggedError<StandaloneProjectAllocationError>()(
+  "StandaloneProjectAllocationError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
 
 export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileError>()(
   "ProjectWriteFileError",

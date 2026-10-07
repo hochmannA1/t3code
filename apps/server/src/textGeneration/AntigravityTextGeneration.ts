@@ -106,6 +106,20 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
   const runAntigravityJson = Effect.fn("AntigravityTextGeneration.runJson")(
     function* <S extends Schema.Top>(input: TextGenerationOperations.Request<S>) {
       const { operation } = input;
+      if (operation === "generateMemory") {
+        return yield* new TextGenerationError({
+          operation,
+          detail:
+            "Antigravity does not support isolated memory generation. Choose a Codex, Claude, or OpenCode model in memory settings.",
+        });
+      }
+      if (operation === "generateMemoryRecommendations") {
+        return yield* new TextGenerationError({
+          operation,
+          detail:
+            "Antigravity does not support isolated memory recommendations. Choose a Codex, Claude, or OpenCode model in text generation settings.",
+        });
+      }
       const scope = yield* Scope.make();
       yield* Effect.addFinalizer((exit) => Scope.close(scope, exit));
       const helper = Effect.gen(function* () {

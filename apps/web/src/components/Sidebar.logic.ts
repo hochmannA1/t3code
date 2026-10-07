@@ -817,6 +817,13 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
 // project, skipping the command palette's project picker. With a single
 // project there is nothing to pick, so a plain click already creates
 // immediately and the modifier changes nothing.
+export function shouldCreateStandaloneWorkTask(
+  isWorkExperience: boolean,
+  shiftKey: boolean,
+): boolean {
+  return isWorkExperience && !shiftKey;
+}
+
 export function shouldCreateNewThreadInCurrentProject(
   shiftKey: boolean,
   projectGroupCount: number,

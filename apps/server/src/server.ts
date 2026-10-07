@@ -54,6 +54,15 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as ForgejoCli from "./sourceControl/ForgejoCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
+import * as AutomationHttp from "./automation/http.ts";
+import * as AutomationService from "./automation/AutomationService.ts";
+import * as AutomationMirror from "./automation/AutomationMirror.ts";
+import * as AutomationStore from "./automation/AutomationStore.ts";
+import * as ForkBackgroundRuntime from "./forkBackgroundRuntime.ts";
+import * as MemoryService from "./memory/MemoryService.ts";
+import * as MemoryStore from "./memory/MemoryStore.ts";
+import * as MemorySourceReader from "./memory/MemorySourceReader.ts";
+import * as StandaloneProject from "./project/StandaloneProject.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
@@ -623,7 +632,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   ),
 );
 
-const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
+const layerRuntimeBaseDependencies = layerRuntimeCoreDependencies.pipe(
   // Misc.
   Layer.provideMerge(layerBackground),
   Layer.provideMerge(layerResourceDiagnostics),
@@ -635,6 +644,26 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(DirectEndpoints.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
   Layer.provide(NetService.layer),
+);
+
+const layerAutomationRuntime = Layer.mergeAll(AutomationService.layer, AutomationMirror.layer).pipe(
+  Layer.provideMerge(AutomationStore.layer),
+);
+
+const layerMemoryRuntime = MemoryService.layer.pipe(
+  Layer.provideMerge(MemoryStore.layer),
+  Layer.provideMerge(MemorySourceReader.layer),
+  Layer.provide(TextGeneration.layer),
+);
+
+const layerRuntimeFeatures = Layer.mergeAll(
+  layerAutomationRuntime,
+  StandaloneProject.layer,
+  layerMemoryRuntime,
+);
+
+const layerRuntimeDependencies = layerRuntimeFeatures.pipe(
+  Layer.provideMerge(layerRuntimeBaseDependencies),
 );
 
 const layerCommandReadiness = HttpRouter.middleware(
@@ -658,6 +687,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
     ),
     ServerHttp.layerOtlpTracesProxyRoute,
+    AutomationHttp.automationInternalRouteLayer,
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
     DeviceHubProxy.layer,
@@ -1035,6 +1065,7 @@ const layerMakeServer = Layer.unwrap(
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),
       layerTailscaleServe,
       layerCloudDesiredLinkReconcile,
+      ForkBackgroundRuntime.layer,
       HeapSnapshot.layer,
     );
 

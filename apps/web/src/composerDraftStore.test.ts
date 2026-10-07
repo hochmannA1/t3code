@@ -1348,6 +1348,41 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(store.getComposerDraft(draftId)?.prompt).toBe("keep this prompt");
   });
 
+  it("keeps the prompt and files when switching between a project and a standalone draft", () => {
+    const store = useComposerDraftStore.getState();
+    const file = makeFile("project-switch-file");
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      branch: "feature/work",
+      worktreePath: "/tmp/project-worktree",
+      envMode: "worktree",
+    });
+    store.setPrompt(draftId, "Review the attached report");
+    store.addFiles(draftId, [file]);
+
+    store.setLogicalProjectDraftThreadId(`standalone-draft:${draftId}`, otherProjectRef, draftId, {
+      envMode: "local",
+      startFromOrigin: false,
+    });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftSession(draftId)).toMatchObject({
+      threadId,
+      environmentId: TEST_ENVIRONMENT_ID,
+      envMode: "local",
+      branch: null,
+      worktreePath: null,
+    });
+    expect(store.getComposerDraft(draftId)?.prompt).toBe("Review the attached report");
+    expect(store.getComposerDraft(draftId)?.files).toEqual([file]);
+
+    store.setProjectDraftThreadId(projectRef, draftId);
+    expect(store.getDraftSessionByLogicalProjectKey(`standalone-draft:${draftId}`)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(projectRef)?.draftId).toBe(draftId);
+    expect(store.getComposerDraft(draftId)?.prompt).toBe("Review the attached report");
+    expect(store.getComposerDraft(draftId)?.files).toEqual([file]);
+  });
+
   it("rotates a failed bootstrap thread id without losing its draft", () => {
     const store = useComposerDraftStore.getState();
     const retryThreadId = ThreadId.make("thread-retry");

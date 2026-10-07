@@ -292,3 +292,7 @@ including filenames or folders containing `#` or `?`.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens a compatible installed file viewer.
+
+## Downloading files
+
+On web and desktop, use the download action beside a file link in chat to save it to your device. You can also right-click a file in the file browser and choose **Download**, or choose **Download as ZIP** for a folder. Folder downloads include nested files and empty folders, but skip symbolic links. Downloads come from the connected environment, including remote environments.

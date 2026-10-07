@@ -44,6 +44,11 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 | Checkpoint baseline | The workspace state captured before the work being compared.                                                 |
 | Turn diff           | The workspace changes attributed to one turn.                                                                |
 
+## Fork concepts
+
+Standalone projects are environment-created folders for chats started without an existing project.
+Automations are scheduled prompt runs; see [automations](../user/automations.md).
+
 ## Pull requests
 
 | Term                 | Meaning                                                                                                                                                                                  |

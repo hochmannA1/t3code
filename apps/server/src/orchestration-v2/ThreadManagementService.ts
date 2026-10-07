@@ -22,6 +22,7 @@ import {
   ProjectId,
   RunId,
   type ScheduledTaskId,
+  type ResponseProfile,
   ThreadId,
   type TurnItemId,
 } from "@t3tools/contracts";
@@ -106,6 +107,7 @@ export interface ThreadManagementSendInput {
   readonly messageId: MessageId;
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
+  readonly responseProfile?: ResponseProfile;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly modelSelection?: ModelSelection;
@@ -582,6 +584,7 @@ const make = Effect.gen(function* () {
         messageId: input.messageId,
         ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
         ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
+        ...(input.responseProfile === undefined ? {} : { responseProfile: input.responseProfile }),
         text: input.text,
         attachments: input.attachments,
         ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),

@@ -102,6 +102,7 @@ import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
 import {
   buildHomeProjectScopes,
+  filterSelectableProjectScopes,
   sortHomeProjectScopes,
   type HomeProjectScope,
 } from "../home/homeThreadList";
@@ -266,11 +267,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const projectScopes = useMemo(
     () =>
       sortHomeProjectScopes({
-        scopes: buildHomeProjectScopes({
-          projects,
-          environmentId: null,
-          projectGroupingMode: groupingSettings.sidebarProjectGroupingMode,
-        }),
+        scopes: filterSelectableProjectScopes(
+          buildHomeProjectScopes({
+            projects,
+            environmentId: null,
+            projectGroupingMode: groupingSettings.sidebarProjectGroupingMode,
+          }),
+        ),
         threads,
         pendingTasks: [],
         projectSortOrder: "updated_at",

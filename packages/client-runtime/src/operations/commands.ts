@@ -16,9 +16,11 @@ import {
   type ProjectId,
   type ProjectIconOverride,
   type ProjectScript,
+  type StandaloneProjectCreateInput,
   type ProviderApprovalDecision,
   type ProviderInteractionMode,
   type ProviderUserInputAnswers,
+  type ResponseProfile,
   type RunId,
   type RuntimeMode,
   type RuntimeRequestId,
@@ -39,6 +41,8 @@ interface CommandMetadata {
   readonly createdAt?: string;
   readonly creationSource?: OrchestrationV2CreationSource;
 }
+
+export type CreateStandaloneProjectInput = StandaloneProjectCreateInput;
 
 export interface CreateProjectInput extends CommandMetadata {
   readonly projectId: ProjectId;
@@ -176,6 +180,7 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly titleSeed?: string;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  readonly responseProfile?: ResponseProfile;
   readonly bootstrap?: StartThreadBootstrap;
   readonly sourceProposedPlan?: { readonly threadId: ThreadId; readonly planId: PlanId };
   readonly dispatchMode?: "auto" | "queue" | "steer" | "restart" | "start";
@@ -337,6 +342,12 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
 ) {
   return yield* request(WS_METHODS.projectsMutate, mutation);
 });
+
+export const createStandaloneProject = Effect.fn("EnvironmentCommands.createStandaloneProject")(
+  function* (input: CreateStandaloneProjectInput) {
+    return yield* request(WS_METHODS.projectsCreateStandalone, input);
+  },
+);
 
 export const createProject = Effect.fn("EnvironmentCommands.createProject")(function* (
   input: CreateProjectInput,
@@ -681,6 +692,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         messageId: input.message.messageId,
         text: input.message.text,
         ...(context ? { context } : {}),
+        ...(input.responseProfile === undefined ? {} : { responseProfile: input.responseProfile }),
         attachments,
       },
     });
@@ -705,6 +717,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       ...(input.sourceProposedPlan === undefined
         ? {}
         : { sourcePlanRef: input.sourceProposedPlan }),
+      ...(input.responseProfile === undefined ? {} : { responseProfile: input.responseProfile }),
       dispatchMode: { type: "start_immediately" },
     });
   }
@@ -765,6 +778,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     ...(shouldSendTitleSeed ? { titleSeed: input.titleSeed } : {}),
     ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
     ...(input.sourceProposedPlan === undefined ? {} : { sourcePlanRef: input.sourceProposedPlan }),
+    ...(input.responseProfile === undefined ? {} : { responseProfile: input.responseProfile }),
     ...(serverResolvesCommandContext && requestedMode !== "queue"
       ? { deliveryIntent: requestedMode }
       : {}),

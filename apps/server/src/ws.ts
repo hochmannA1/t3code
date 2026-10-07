@@ -201,6 +201,9 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
+import * as StandaloneProject from "./project/StandaloneProject.ts";
+import * as AutomationService from "./automation/AutomationService.ts";
+import * as MemoryService from "./memory/MemoryService.ts";
 import { projectMutationOperation } from "./project/ProjectMutation.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
@@ -212,6 +215,7 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
+import { scopeProjectHandlersV2 } from "./KaraProjectAccessV2.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
@@ -476,6 +480,12 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
     case "WorkspaceSearchIndexSearchFailed":
       return {
         failure: "search_index_search_failed",
+        normalizedCwd: error.cwd,
+        detail: error.reason,
+      };
+    case "WorkspaceSearchIndexWatchFailed":
+      return {
+        failure: "search_index_watch_failed",
         normalizedCwd: error.cwd,
         detail: error.reason,
       };
@@ -1198,6 +1208,7 @@ const layerWsRpc = (
       const projectStore = yield* ProjectStore.ProjectStoreV2;
       const projectService = yield* ProjectService.ProjectService;
       const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+      const standaloneProjects = yield* StandaloneProject.StandaloneProject;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -1280,6 +1291,8 @@ const layerWsRpc = (
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+      const automations = yield* AutomationService.AutomationService;
+      const memory = yield* MemoryService.MemoryService;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
       yield* Effect.addFinalizer(() =>
         Ref.get(rpcClientIds).pipe(
@@ -1725,6 +1738,11 @@ const layerWsRpc = (
               onSome: (root) => ({ scratchWorkspaceRoot: root }),
             }),
             newProjectsRoot: managedFolders.namedProjectsRoot,
+            automationCapabilities: {
+              schedules: ["once", "interval", "cron"] as const,
+              destinations: ["same-thread", "new-thread"] as const,
+              remoteScheduling: process.env.T3_AUTOMATIONS_COORDINATOR_URL !== undefined,
+            },
           };
         });
 
@@ -1803,6 +1821,16 @@ const layerWsRpc = (
         return result;
       });
 
+      const sharedProjectShellSnapshot = sql.withTransaction(
+        Effect.gen(function* () {
+          const threads = yield* threadManagement.getShellSnapshot({ location: "active" });
+          return buildActiveShellSnapshot({
+            projects: yield* projectStore.listShells(),
+            threads,
+            snapshotSequence: yield* applicationEvents.latestApplicationSequence,
+          });
+        }),
+      );
       const handlers = ServerWsRpcGroup.of({
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
@@ -1983,6 +2011,9 @@ const layerWsRpc = (
                             ? {}
                             : { messageId: input.initialMessage.messageId }),
                           text: input.initialMessage.text,
+                          ...(input.initialMessage.responseProfile === undefined
+                            ? {}
+                            : { responseProfile: input.initialMessage.responseProfile }),
                           attachments: input.initialMessage.attachments,
                           ...(input.initialMessage.context === undefined
                             ? {}
@@ -2116,6 +2147,74 @@ const layerWsRpc = (
             WS_METHODS.scheduledTasksGetWebhookDelivery,
             scheduledTasks.getWebhookDelivery(input),
             { "rpc.aggregate": "scheduledTasks", "scheduled_task.id": input.id },
+          ),
+        [WS_METHODS.memoryGetState]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryGetState, memory.getState(input), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memoryGetRecommendations]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryGetRecommendations, memory.getRecommendations(input), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memoryUpsert]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryUpsert, memory.upsert(input), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memoryForget]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryForget, memory.forget(input).pipe(Effect.as({})), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memorySetThreadPolicy]: (input) =>
+          observeRpcEffect(WS_METHODS.memorySetThreadPolicy, memory.setThreadPolicy(input), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.memoryRunNow]: (input) =>
+          observeRpcEffect(WS_METHODS.memoryRunNow, memory.runNow(input).pipe(Effect.as({})), {
+            "rpc.aggregate": "memory",
+          }),
+        [WS_METHODS.automationsList]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsList,
+            automations.list(input).pipe(Effect.map((entries) => ({ automations: entries }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsGet]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsGet, automations.get(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsCreate]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsCreate, automations.create(input), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsUpdate]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsUpdate, automations.update(input), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsDelete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsDelete,
+            automations.remove(input.automationId).pipe(Effect.as({})),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsPause]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsPause, automations.pause(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsResume]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsResume, automations.resume(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsRunNow]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsRunNow, automations.runNow(input.automationId), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsListRuns]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsListRuns,
+            automations
+              .listRuns(input.automationId, input.limit)
+              .pipe(Effect.map((runs) => ({ runs }))),
+            { "rpc.aggregate": "automations" },
           ),
         [WS_METHODS.serverProbe]: (_input) =>
           observeRpcEffect(WS_METHODS.serverProbe, Effect.succeed({}), {
@@ -3008,6 +3107,10 @@ const layerWsRpc = (
               ),
             { "rpc.aggregate": "orchestration" },
           ),
+        [WS_METHODS.projectsCreateStandalone]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsCreateStandalone, standaloneProjects.create(input), {
+            "rpc.aggregate": "orchestration",
+          }),
         [WS_METHODS.projectCloneCancel]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectCloneCancel,
@@ -3079,6 +3182,37 @@ const layerWsRpc = (
             WS_METHODS.projectsListEntries,
             workspaceEntries.list(input).pipe(
               Effect.mapError(
+                (cause) =>
+                  new ProjectListEntriesError({
+                    ...input,
+                    ...projectEntriesFailureContext(cause),
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsRefreshEntries]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsRefreshEntries,
+            workspaceEntries.refresh(input.cwd).pipe(
+              Effect.andThen(workspaceEntries.list(input)),
+              Effect.mapError(
+                (cause) =>
+                  new ProjectListEntriesError({
+                    ...input,
+                    ...projectEntriesFailureContext(cause),
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsSubscribeEntryChanges]: (input) =>
+          observeRpcStream(
+            WS_METHODS.projectsSubscribeEntryChanges,
+            workspaceEntries.changes(input.cwd).pipe(
+              Stream.mapError(
                 (cause) =>
                   new ProjectListEntriesError({
                     ...input,
@@ -3193,9 +3327,10 @@ const layerWsRpc = (
               ) {
                 return yield* issueAssetUrl({ resource: input.resource });
               }
-              if (input.resource._tag === "draft-workspace-file") {
-                // A project draft names its workspace directly; there is no
-                // thread to resolve one from.
+              if (
+                input.resource._tag === "draft-workspace-file" ||
+                input.resource._tag === "workspace-download"
+              ) {
                 return yield* issueAssetUrl({
                   resource: input.resource,
                   workspaceRoot: input.resource.cwd,
@@ -3789,7 +3924,11 @@ const layerWsRpc = (
             { "rpc.aggregate": "server" },
           ),
       });
-      return handlers;
+      return scopeProjectHandlersV2(
+        handlers,
+        currentSession.karaProjectScope,
+        () => sharedProjectShellSnapshot,
+      );
     }),
   );
 

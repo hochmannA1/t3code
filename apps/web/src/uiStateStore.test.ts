@@ -1,6 +1,7 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { DEFAULT_APP_EXPERIENCE, type AppExperience } from "./workExperience";
 import {
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
@@ -20,6 +21,7 @@ import {
 
 function makeUiState(overrides: Partial<UiState> = {}): UiState {
   return {
+    appExperience: DEFAULT_APP_EXPERIENCE,
     projectExpandedById: {},
     projectOrder: [],
     sidebarProjectScopeKey: null,
@@ -32,6 +34,15 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
 }
 
 describe("uiStateStore pure functions", () => {
+  it("defaults legacy and malformed app experience values to Work", () => {
+    expect(parsePersistedState({}).appExperience).toBe("work");
+    expect(parsePersistedState({ appExperience: "developer" }).appExperience).toBe("work");
+  });
+
+  it.each<AppExperience>(["code", "work"])("parses the %s app experience", (experience) => {
+    expect(parsePersistedState({ appExperience: experience }).appExperience).toBe(experience);
+  });
+
   it("stores server timestamps without moving visit state backwards", () => {
     const threadId = ThreadId.make("thread-1");
     const initialState = makeUiState();
@@ -193,6 +204,7 @@ describe("parsePersistedState", () => {
     });
 
     expect(parsed).toEqual({
+      appExperience: "work",
       projectExpandedById: {
         logical: false,
       },
@@ -315,6 +327,7 @@ describe("uiStateStore persistence", () => {
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
     expect(persisted).toEqual({
+      appExperience: "work",
       projectExpandedById: {
         logical: false,
       },

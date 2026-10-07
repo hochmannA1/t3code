@@ -90,6 +90,8 @@ export function FirstRunGate({
   const projects = useProjects();
   const threads = useThreadShells();
   const serverConfig = useAtomValue(primaryServerConfigAtom);
+  const sharedProject = serverConfig?.environment.environmentId.startsWith("kara-share:") ?? false;
+  // karaSharedProjectFirstRunGate
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const primaryShellLive = useAtomValue(primaryShellLiveAtom);
   const workspaceEvidenceLive = useAtomValue(workspaceEvidenceLiveAtom);
@@ -97,7 +99,7 @@ export function FirstRunGate({
   // the wizard) resolve synchronously instead of blanking a frame.
   const [gateState, setGateState] = useState<FirstRunGateState>(() => ({
     decision:
-      (!enabled && !hostedStatic) || (hydrated && onboardingCompletedAt !== null)
+      sharedProject || (!enabled && !hostedStatic) || (hydrated && onboardingCompletedAt !== null)
         ? "app"
         : "pending",
     stalled: false,
@@ -125,31 +127,33 @@ export function FirstRunGate({
     threads,
   });
 
-  const { decision: nextDecision, persistCompletion } = hostedStatic
-    ? resolveHostedFirstRunDecision({
-        localEnvironmentDisabled: isLocalEnvironmentDisabled(),
-        hydrated,
-        completed: onboardingCompletedAt !== null,
-        catalogReady: environmentCatalogReady,
-        environmentCount: environments.length,
-      })
-    : resolveFirstRunDecision({
-        enabled,
-        hydrated,
-        completed: onboardingCompletedAt !== null,
-        bootstrapped,
-        authoritative: primaryShellLive,
-        workspaceAuthoritative: workspaceEvidenceLive,
-        workspaceProvenanceAuthoritative: isFirstRunWorkspaceProvenanceAuthoritative({
-          welcomeReceived: serverWelcome !== null,
-          bootstrapStatus: serverWelcome?.bootstrapStatus ?? null,
-        }),
-        catalogReady: environmentCatalogReady,
-        serverConfigAvailable: serverConfig !== null,
-        workspaceFresh,
-        projectCount: projects.length,
-        threadCount: threads.length,
-      });
+  const { decision: nextDecision, persistCompletion } = sharedProject
+    ? { decision: "app" as const, persistCompletion: false }
+    : hostedStatic
+      ? resolveHostedFirstRunDecision({
+          localEnvironmentDisabled: isLocalEnvironmentDisabled(),
+          hydrated,
+          completed: onboardingCompletedAt !== null,
+          catalogReady: environmentCatalogReady,
+          environmentCount: environments.length,
+        })
+      : resolveFirstRunDecision({
+          enabled,
+          hydrated,
+          completed: onboardingCompletedAt !== null,
+          bootstrapped,
+          authoritative: primaryShellLive,
+          workspaceAuthoritative: workspaceEvidenceLive,
+          workspaceProvenanceAuthoritative: isFirstRunWorkspaceProvenanceAuthoritative({
+            welcomeReceived: serverWelcome !== null,
+            bootstrapStatus: serverWelcome?.bootstrapStatus ?? null,
+          }),
+          catalogReady: environmentCatalogReady,
+          serverConfigAvailable: serverConfig !== null,
+          workspaceFresh,
+          projectCount: projects.length,
+          threadCount: threads.length,
+        });
 
   useEffect(() => {
     if (decision === "wizard" || !hydrated) return;

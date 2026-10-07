@@ -1973,6 +1973,31 @@ export function deriveMessagesTimelineRowsWithState(
   };
 }
 
+export function presentWorkTimelineRows(input: {
+  readonly rows: ReadonlyArray<MessagesTimelineRow>;
+  readonly expandedRunIds: ReadonlySet<RunId>;
+}): MessagesTimelineRow[] {
+  return input.rows.filter((row) => {
+    if (row.kind !== "work" || row.isExpandedToolGroup) return true;
+    if (
+      row.groupedEntries.some(
+        (entry) =>
+          entry.tone === "info" ||
+          entry.tone === "error" ||
+          entry.itemType === "notification" ||
+          entry.toolLifecycleStatus === "inProgress" ||
+          entry.toolLifecycleStatus === "failed" ||
+          workEntryDisplayIndicatesToolFailure(entry),
+      )
+    ) {
+      return true;
+    }
+    return row.groupedEntries.some(
+      (entry) => entry.runId != null && input.expandedRunIds.has(entry.runId),
+    );
+  });
+}
+
 export function computeStableMessagesTimelineRows(
   rows: MessagesTimelineRow[],
   previous: StableMessagesTimelineRowsState,

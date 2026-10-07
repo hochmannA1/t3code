@@ -148,6 +148,16 @@ function selectOpenCodeRuntimeTextGeneration(
   v2: TextGeneration["Service"],
 ): TextGeneration["Service"] {
   return {
+    generateMemory: (input) =>
+      byOpenCodeRuntime(probe.get, {
+        v1: v1.generateMemory(input),
+        v2: v2.generateMemory(input),
+      }),
+    generateMemoryRecommendations: (input) =>
+      byOpenCodeRuntime(probe.get, {
+        v1: v1.generateMemoryRecommendations(input),
+        v2: v2.generateMemoryRecommendations(input),
+      }),
     generateCommitMessage: (input) =>
       byOpenCodeRuntime(probe.get, {
         v1: v1.generateCommitMessage(input),

@@ -497,11 +497,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "memory",
+    title: "Memory",
+    to: "/settings/general",
+    targetId: "memory",
+    searchTerms: ["dream dreaming memories learn forget personal project conversation model"],
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",
     scope: "project-defaults",
-    searchTerms: ["generated thread titles source control content default provider"],
+    searchTerms: [
+      "generated thread titles new task recommendations suggestions source control content default provider",
+    ],
   },
   {
     id: "diagnostics",
@@ -643,6 +652,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/integrations",
     targetId: "devices",
     searchTerms: ["xcode android studio sdk avd runtime"],
+  },
+  {
+    id: "agent-automation-access",
+    title: "Let agents manage automations",
+    to: "/settings/integrations",
+    targetId: "automations",
   },
   {
     id: "browser-profiles",

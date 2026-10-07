@@ -1,4 +1,10 @@
-import { buildProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
+import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
+import {
+  buildProjectGroups,
+  derivePhysicalProjectKey,
+  deriveProjectGroupLabel,
+} from "@t3tools/client-runtime/state/project-grouping";
+import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -27,6 +33,12 @@ export interface HomeProjectScope {
   readonly representative: EnvironmentProject;
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly projectRefs: ReadonlyArray<ScopedProjectRef>;
+}
+
+export function filterSelectableProjectScopes(
+  scopes: ReadonlyArray<HomeProjectScope>,
+): ReadonlyArray<HomeProjectScope> {
+  return scopes.filter((scope) => scope.projects.some((project) => !isStandaloneProject(project)));
 }
 
 function getProjectSortTimestamp(

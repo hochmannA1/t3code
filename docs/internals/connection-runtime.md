@@ -85,3 +85,15 @@ follow replacement sessions. After a transport failure they wait for the
 supervisor; an expected domain failure may resubscribe on the same healthy
 session. Reconnection does not automatically replay mutations, whose retry and
 idempotency rules belong to the operation.
+
+Web task routes render cached details and local drafts before shell synchronization
+finishes. Absence from the shell is not proof of deletion: archived tasks are omitted
+from its index. A route waits for detail loading, reports an actual detail error, or
+handles an explicit deletion event. The Work landing page needs only its primary
+environment identity to prepare a projectless draft; unrelated environments do not
+hold it up.
+
+Both web sidebars prewarm details for at most five visible tasks using the same
+shared thread atoms as the task view. Work also prefetches the active environment's
+shared recommendation query before opening a new draft. These subscriptions run
+independently of route rendering and reuse the normal caches.

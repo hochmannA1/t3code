@@ -20,6 +20,11 @@ import {
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
+import { buildMemoryPrompt, validateMemorySources } from "./MemoryGeneration.ts";
+import {
+  buildMemoryRecommendationPrompt,
+  validateMemoryRecommendations,
+} from "./MemoryRecommendationGeneration.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
@@ -66,6 +71,30 @@ export const decodeJsonReply = <S extends Schema.Top>(
 
 /** The text generation service over `run`. `name` prefixes each operation's span. */
 export function fromRunner(name: string, run: Runner): TextGeneration.TextGeneration["Service"] {
+  const generateMemory: TextGeneration.TextGeneration["Service"]["generateMemory"] = Effect.fn(
+    `${name}.generateMemory`,
+  )(function* (input) {
+    const { sourceIds, ...generation } = buildMemoryPrompt(input);
+    const generated = yield* run({
+      operation: "generateMemory",
+      cwd: input.cwd,
+      modelSelection: input.modelSelection,
+      ...generation,
+    });
+    return yield* validateMemorySources(generated, sourceIds);
+  });
+
+  const generateMemoryRecommendations: TextGeneration.TextGeneration["Service"]["generateMemoryRecommendations"] =
+    Effect.fn(`${name}.generateMemoryRecommendations`)(function* (input) {
+      const generated = yield* run({
+        operation: "generateMemoryRecommendations",
+        cwd: input.cwd,
+        modelSelection: input.modelSelection,
+        ...buildMemoryRecommendationPrompt(input),
+      });
+      return yield* validateMemoryRecommendations(generated);
+    });
+
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn(`${name}.generateCommitMessage`)(function* (input) {
       const generated = yield* run({
@@ -145,6 +174,8 @@ export function fromRunner(name: string, run: Runner): TextGeneration.TextGenera
     });
 
   return {
+    generateMemory,
+    generateMemoryRecommendations,
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

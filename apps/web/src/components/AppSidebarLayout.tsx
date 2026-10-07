@@ -36,9 +36,11 @@ import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { useWorkSidebarView, resolveThreadSidebarVariant } from "../hooks/useWorkSidebarView";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
+import { useUiStateStore } from "../uiStateStore";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -219,6 +221,13 @@ function ProjectProjectionRetention() {
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const appExperience = useUiStateStore((state) => state.appExperience);
+  const [workSidebarView] = useWorkSidebarView();
+  const threadSidebarVariant = resolveThreadSidebarVariant({
+    appExperience,
+    workSidebarView,
+    legacySidebarEnabled,
+  });
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   // Settings routes show the settings nav in place of whichever thread
@@ -328,7 +337,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
               <SidebarChromeHeader isElectron={isElectron} />
               <SettingsSidebarNav pathname={pathname} />
             </>
-          ) : legacySidebarEnabled ? (
+          ) : threadSidebarVariant === "work-projects" || threadSidebarVariant === "code-legacy" ? (
             <LegacyThreadSidebar />
           ) : (
             <ThreadSidebar />

@@ -19,7 +19,7 @@ interface ThreadContextLike {
 
 interface NewThreadHandler {
   (
-    projectRef: ScopedProjectRef,
+    projectRef: ScopedProjectRef | null,
     options?: {
       branch?: string | null;
       worktreePath?: string | null;
@@ -33,6 +33,7 @@ interface NewThreadHandler {
 export interface ChatThreadActionContext {
   readonly activeDraftThread: ThreadContextLike | null;
   readonly activeThread: ThreadContextLike | undefined;
+  readonly selectedProjectRef?: ScopedProjectRef | null;
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
 }
@@ -71,6 +72,9 @@ export function hasExplicitComposerModelSelection(
 export function resolveThreadActionProjectRef(
   context: ChatThreadActionContext,
 ): ScopedProjectRef | null {
+  if (context.selectedProjectRef) {
+    return context.selectedProjectRef;
+  }
   if (context.activeThread) {
     return scopeProjectRef(context.activeThread.environmentId, context.activeThread.projectId);
   }
@@ -93,10 +97,6 @@ export async function startNewThreadFromContext(
   context: ChatThreadActionContext,
 ): Promise<boolean> {
   const projectRef = resolveThreadActionProjectRef(context);
-  if (!projectRef) {
-    return false;
-  }
-
-  await context.handleNewThread(projectRef);
-  return true;
+  const result = await context.handleNewThread(projectRef);
+  return result !== null;
 }

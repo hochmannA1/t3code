@@ -91,6 +91,13 @@ const PREVIEW_ASSET_EXTENSIONS = new Set([
 const AssetClaimsSchema = Schema.Union([
   Schema.Struct({
     version: Schema.Literal(1),
+    kind: Schema.Literal("workspace-download"),
+    filePath: Schema.String,
+    directory: Schema.Boolean,
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
     kind: Schema.Literal("workspace-file"),
     workspaceRoot: Schema.String,
     baseRelativePath: Schema.String,
@@ -169,6 +176,7 @@ const encodeAssetClaims = Schema.encodeSync(AssetClaimsJson);
 export type ResolvedAsset =
   | {
       readonly kind: "file";
+      readonly directory?: boolean;
       readonly path: string;
       readonly download?: boolean;
       readonly fileName?: string;
@@ -472,6 +480,28 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   let imageDimensions: ImageDimensions | null = null;
 
   switch (input.resource._tag) {
+    case "workspace-download": {
+      const resource = input.resource;
+      const inspected = yield* Effect.gen(function* () {
+        const filePath = yield* fileSystem.realPath(path.resolve(resource.cwd, resource.path));
+        const info = yield* fileSystem.stat(filePath);
+        return { filePath, info };
+      }).pipe(
+        Effect.mapError((cause) => new AssetWorkspaceAssetInspectionError({ resource, cause })),
+      );
+      if (inspected.info.type !== "File" && inspected.info.type !== "Directory") {
+        return yield* new AssetWorkspaceAssetNotFoundError({ resource });
+      }
+      claims = {
+        version: 1,
+        kind: "workspace-download",
+        filePath: inspected.filePath,
+        directory: inspected.info.type === "Directory",
+        expiresAt,
+      };
+      fileName = path.basename(inspected.filePath) + (claims.directory ? ".zip" : "");
+      break;
+    }
     case "media-file": {
       let requestedPath = expandHomePathWith(input.resource.path, path);
       if (!path.isAbsolute(requestedPath)) {
@@ -804,6 +834,31 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
 
   const claims = decodeClaims(encodedPayload);
   if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
+
+  if (claims.kind === "workspace-download") {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const fileName = path.basename(claims.filePath) + (claims.directory ? ".zip" : "");
+    if (decodeRelativePath(relativePath) !== fileName) return null;
+    const canonical = yield* fs.realPath(claims.filePath).pipe(Effect.orElseSucceed(() => null));
+    if (canonical !== claims.filePath) return null;
+    if (claims.directory) {
+      const info = yield* fs.stat(canonical).pipe(Effect.orElseSucceed(() => null));
+      return info?.type === "Directory"
+        ? ({
+            kind: "file",
+            path: canonical,
+            directory: true,
+            download: true,
+            fileName,
+          } satisfies ResolvedAsset)
+        : null;
+    }
+    const file = yield* openMediaFile(canonical).pipe(Effect.orElseSucceed(() => null));
+    return file
+      ? ({ kind: "file", path: canonical, download: true, fileName, file } satisfies ResolvedAsset)
+      : null;
+  }
 
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;

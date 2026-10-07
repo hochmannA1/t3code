@@ -1,3 +1,4 @@
+import { MemorySettingsSection } from "./MemorySettingsSection";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation } from "@react-navigation/native";
@@ -204,6 +205,8 @@ function SettingsIndexSections() {
           disabled={noServerTargets}
         />
       </SettingsSection>
+
+      <MemorySettingsSection />
 
       <SettingsSection title="App">
         <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />

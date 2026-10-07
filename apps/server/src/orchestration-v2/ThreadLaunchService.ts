@@ -13,6 +13,7 @@ import {
   type OrchestrationV2ThreadProjection,
   type ProviderDriverKind,
   type ProviderInteractionMode,
+  type ResponseProfile,
   ProjectId,
   type RunId,
   type RuntimeMode,
@@ -67,6 +68,7 @@ export interface ThreadLaunchInitialMessage {
   readonly messageId?: MessageId;
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
+  readonly responseProfile?: ResponseProfile;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
@@ -829,6 +831,9 @@ const make = Effect.gen(function* () {
               ...(input.initialMessage.senderThreadId === undefined
                 ? {}
                 : { senderThreadId: input.initialMessage.senderThreadId }),
+              ...(input.initialMessage.responseProfile === undefined
+                ? {}
+                : { responseProfile: input.initialMessage.responseProfile }),
               attachments: input.initialMessage.attachments,
               ...(input.initialMessage.context ? { context: input.initialMessage.context } : {}),
               ...(input.generateTitle === true ? { titleSeed: input.title } : {}),

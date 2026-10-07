@@ -701,6 +701,7 @@ export function buildCodexTurnStartParams(input: {
   readonly hasT3Mcp?: boolean;
   readonly browserToolsAvailable?: boolean;
   readonly deviceToolsAvailable?: boolean;
+  readonly responseProfile?: ProviderAdapterV2TurnInput["message"]["responseProfile"];
   /** ChatGPT token sharing does not accept service tiers. */
   readonly omitServiceTier?: boolean;
 }) {
@@ -736,6 +737,7 @@ export function buildCodexTurnStartParams(input: {
               browser: input.browserToolsAvailable ?? true,
               device: input.deviceToolsAvailable ?? false,
             },
+            input.responseProfile,
           )
         : undefined;
     const collaborationMode: CodexSchema.ClientRequest__CollaborationMode | undefined =
@@ -5834,6 +5836,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
               runtimePolicy: turnInput.runtimePolicy,
               modelSelection: turnInput.modelSelection,
               hasT3Mcp: mcpSession !== undefined,
+              responseProfile: turnInput.message.responseProfile,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,

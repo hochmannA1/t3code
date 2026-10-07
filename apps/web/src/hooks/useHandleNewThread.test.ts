@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import type { RuntimeMode } from "@t3tools/contracts";
+import type { EnvironmentId, RuntimeMode } from "@t3tools/contracts";
 
 const testState = vi.hoisted(() => {
   let completeProjectFileRead: (value: null) => void = () => undefined;
@@ -16,6 +16,16 @@ const testState = vi.hoisted(() => {
     readonly promotedTo: null;
     readonly threadId: string;
   } | null = null;
+  const defaultProjects = [
+    {
+      id: "project-remote",
+      environmentId: "environment-ssh",
+      workspaceRoot: "/remote/project",
+      defaultThreadEnvMode: null,
+      defaultModelSelection: null,
+    },
+  ];
+  let projects = defaultProjects;
   const router = {
     state: {
       location: { href: "/" },
@@ -37,6 +47,12 @@ const testState = vi.hoisted(() => {
   };
 
   return {
+    get projects() {
+      return projects;
+    },
+    setProjects(nextProjects: typeof projects) {
+      projects = nextProjects;
+    },
     completeProjectFileRead: (value: null) => completeProjectFileRead(value),
     draftStore,
     get projectFileRead() {
@@ -53,6 +69,7 @@ const testState = vi.hoisted(() => {
       },
     ) {
       storedDraft = nextStoredDraft;
+      projects = defaultProjects;
       targetSettings = {
         defaultThreadEnvMode: workspaceDefaults.envMode,
         newWorktreesStartFromOrigin: workspaceDefaults.startFromOrigin,
@@ -93,7 +110,8 @@ vi.mock("@t3tools/client-runtime/environment", () => ({
   scopeProjectRef: (environmentId: string, projectId: string) => ({ environmentId, projectId }),
   scopeThreadRef: (environmentId: string, threadId: string) => ({ environmentId, threadId }),
 }));
-vi.mock("@t3tools/contracts", () => ({
+vi.mock("@t3tools/contracts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/contracts")>()),
   DEFAULT_RUNTIME_MODE: "default",
   DEFAULT_SERVER_SETTINGS: {},
 }));
@@ -148,6 +166,7 @@ vi.mock("../lib/t3ProjectFileDefaults", () => ({
 }));
 vi.mock("../lib/utils", () => ({
   newDraftId: () => "draft-delayed",
+  newProjectId: () => "project-placeholder",
   newThreadId: () => "thread-delayed",
 }));
 vi.mock("../logicalProject", () => ({
@@ -156,18 +175,15 @@ vi.mock("../logicalProject", () => ({
   selectProjectGroupingSettings: () => ({}),
 }));
 vi.mock("../state/entities", () => ({
-  readProjects: () => [
-    {
-      id: "project-remote",
-      environmentId: "environment-ssh",
-      workspaceRoot: "/remote/project",
-      defaultThreadEnvMode: null,
-      defaultModelSelection: null,
-    },
-  ],
+  readProjects: () => testState.projects,
   readThreadShell: () => null,
   useProjects: () => [],
   useThread: () => null,
+}));
+vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => "environment-ssh" }));
+vi.mock("../workExperience", () => ({
+  createWorkModelSelection: vi.fn(),
+  resolveWorkComplexity: () => "normal",
 }));
 vi.mock("../state/server", () => ({
   environmentServerConfigsAtom: {},
@@ -286,4 +302,70 @@ describe.each([
       );
     },
   );
+});
+
+const sharedEnvironmentId = "kara-share:share-1" as EnvironmentId;
+const sharedProject = (id: string) => ({
+  id,
+  environmentId: sharedEnvironmentId,
+  workspaceRoot: `/shared/${id}`,
+  defaultThreadEnvMode: null,
+  defaultModelSelection: null,
+});
+
+describe("useNewThreadHandler shared-project drafts", () => {
+  it("normalizes a null project to the sole shared project", async () => {
+    testState.reset(null);
+    testState.setProjects([sharedProject("project-shared")]);
+    const sharedProjectRef = {
+      environmentId: sharedEnvironmentId,
+      projectId: "project-shared",
+    };
+    const pendingOpen = useNewThreadHandler()(null, { environmentId: sharedEnvironmentId });
+
+    testState.completeProjectFileRead(null);
+    const opened = await pendingOpen;
+
+    expect(opened).toEqual({ draftId: "draft-delayed", threadId: "thread-delayed" });
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).toHaveBeenCalledWith(
+      "remote-project",
+      sharedProjectRef,
+      "draft-delayed",
+      expect.anything(),
+    );
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalledWith(
+      "standalone-draft:draft-delayed",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it.each([
+    { projects: [] as ReturnType<typeof sharedProject>[] },
+    { projects: [sharedProject("project-one"), sharedProject("project-two")] },
+  ])("does not create a draft unless exactly one shared project matches", async ({ projects }) => {
+    testState.reset(null);
+    testState.setProjects(projects);
+
+    const opened = await useNewThreadHandler()(null, { environmentId: sharedEnvironmentId });
+
+    expect(opened).toBeNull();
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+    expect(testState.router.navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps an ordinary owner null-project request standalone", async () => {
+    testState.reset(null);
+
+    const opened = await useNewThreadHandler()(null);
+
+    expect(opened).toEqual({ draftId: "draft-delayed", threadId: "thread-delayed" });
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).toHaveBeenCalledWith(
+      "standalone-draft:draft-delayed",
+      { environmentId: "environment-ssh", projectId: "project-placeholder" },
+      "draft-delayed",
+      expect.objectContaining({ threadId: "thread-delayed" }),
+    );
+  });
 });

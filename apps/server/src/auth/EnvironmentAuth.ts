@@ -21,6 +21,7 @@ import {
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -39,6 +40,7 @@ import * as SessionStore from "./SessionStore.ts";
 import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { verifyProjectGrant, type ProjectGrant } from "../KaraProjectGrant.ts";
 
 const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
 export const INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT = "administrative-bootstrap";
@@ -68,6 +70,7 @@ export interface AuthenticatedSession {
   readonly subject: string;
   readonly method: ServerAuthSessionMethod;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  readonly karaProjectScope?: ProjectGrant;
   readonly proofKeyThumbprint?: string;
   readonly expiresAt?: DateTime.DateTime;
 }
@@ -516,6 +519,37 @@ const AUTHORIZATION_PREFIX = "Bearer ";
 const DPOP_AUTHORIZATION_PREFIX = "DPoP ";
 const WEBSOCKET_TICKET_QUERY_PARAM = "wsTicket";
 
+function isAllowedKaraProjectHttpRequest(request: HttpServerRequest.HttpServerRequest): boolean {
+  if (request.method !== "GET") return false;
+  const requestUrl = HttpServerRequest.toURL(request);
+  if (Option.isNone(requestUrl)) return false;
+  const { pathname, searchParams } = requestUrl.value;
+  if (pathname === "/.well-known/t3/environment" || pathname === "/api/orchestration/shell")
+    return [...searchParams.keys()].length === 0;
+  const match = /^\/api\/orchestration\/threads\/[^/]{1,128}(?:\/(bounded|history))?$/u.exec(
+    pathname,
+  );
+  if (!match) return false;
+  const suffix = match[1];
+  if (suffix === "history") {
+    return (
+      [...searchParams.keys()].every(
+        (key) => key === "cursor" && searchParams.getAll(key).length === 1,
+      ) &&
+      (searchParams.get("cursor") === null ||
+        (searchParams.get("cursor")!.length <= 4_096 &&
+          searchParams.get("cursor")!.trim() === searchParams.get("cursor")))
+    );
+  }
+  const allowed =
+    suffix === "bounded"
+      ? new Set<string>()
+      : new Set(["reasoningMessages", "turnLimit", "beforeCursor"]);
+  return [...searchParams.keys()].every(
+    (key) => allowed.has(key) && searchParams.getAll(key).length === 1,
+  );
+}
+
 const bySessionPriority = (left: AuthClientSession, right: AuthClientSession) => {
   const leftCanManage = left.scopes.includes(AuthAccessWriteScope);
   const rightCanManage = right.scopes.includes(AuthAccessWriteScope);
@@ -655,6 +689,36 @@ export const make = Effect.gen(function* () {
       return Effect.fail(new ServerAuthMissingCredentialError({}));
     }
     return authenticateToken(credential.token).pipe(
+      Effect.flatMap((session) => {
+        const grantToken = request.headers["x-kara-project-grant"];
+        if (grantToken === undefined) return Effect.succeed(session);
+        return Effect.flatMap(Clock.currentTimeMillis, (now) => {
+          const grant =
+            typeof grantToken === "string"
+              ? verifyProjectGrant(
+                  grantToken,
+                  process.env.T3CODE_ADMIN_BOOTSTRAP ?? "",
+                  Math.floor(now / 1_000),
+                )
+              : null;
+          const bootstrapSubject =
+            session.subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT ||
+            session.subject === "desktop-bootstrap";
+          if (!grant || !bootstrapSubject || !session.scopes.includes(AuthAccessWriteScope)) {
+            return Effect.fail(
+              new ServerAuthInvalidCredentialError({ diagnostic: "Invalid project grant." }),
+            );
+          }
+          return Effect.succeed({
+            ...session,
+            subject: grant.subject,
+            scopes: (grant.role === "edit"
+              ? ["orchestration:read", "orchestration:operate"]
+              : ["orchestration:read"]) as ReadonlyArray<AuthEnvironmentScope>,
+            karaProjectScope: grant,
+          });
+        });
+      }),
       Effect.flatMap((session) => {
         if (session.proofKeyThumbprint) {
           if (!dpopToken || dpopToken !== credential.token) {
@@ -1070,10 +1134,23 @@ export const make = Effect.gen(function* () {
   const authenticateHttpRequest: EnvironmentAuth["Service"]["authenticateHttpRequest"] = (
     request,
   ) =>
-    authenticateRequest(request).pipe(Effect.withSpan("EnvironmentAuth.authenticateHttpRequest"));
+    authenticateRequest(request).pipe(
+      Effect.flatMap((session) => {
+        if (!session.karaProjectScope || isAllowedKaraProjectHttpRequest(request))
+          return Effect.succeed(session);
+        return Effect.fail(
+          new ServerAuthInvalidCredentialError({
+            diagnostic: "Invalid shared-project HTTP route.",
+          }),
+        );
+      }),
+      Effect.withSpan("EnvironmentAuth.authenticateHttpRequest"),
+    );
 
   const authenticateWebSocketUpgrade: EnvironmentAuth["Service"]["authenticateWebSocketUpgrade"] =
     Effect.fn("EnvironmentAuth.authenticateWebSocketUpgrade")(function* (request) {
+      if (request.headers["x-kara-project-grant"] !== undefined)
+        return yield* authenticateRequest(request);
       const requestUrl = HttpServerRequest.toURL(request);
       if (Option.isSome(requestUrl)) {
         const websocketTicket = requestUrl.value.searchParams.get(WEBSOCKET_TICKET_QUERY_PARAM);

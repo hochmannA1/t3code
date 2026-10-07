@@ -1,6 +1,7 @@
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { runtimeModeConfig, runtimeModeOptions as runtimeModes } from "./runtimeModeConfig";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
+import { isSharedProjectEnvironment } from "../../sharedProjectAccess";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
@@ -32,6 +33,7 @@ import type {
   ResolvedKeybindingsConfig,
   RuntimeMode,
   RuntimeRequestId,
+  ScopedProjectRef,
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
@@ -1080,6 +1082,8 @@ import {
   PencilRulerIcon,
   PlayIcon,
   ShieldIcon,
+  FolderIcon,
+  ChevronDownIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
@@ -1130,6 +1134,17 @@ import { useDelayedStatus } from "../../hooks/useDelayedStatus";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { usePanelAnimationSettings } from "../../panelAnimations";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { WorkComplexityControl } from "../work/WorkComplexityControl";
+import { ProjectPickerMenu } from "./ProjectPickerMenu";
+import {
+  DEFAULT_WORK_CODEX_INSTANCE_ID,
+  DEFAULT_WORK_COMPLEXITY,
+  resolveWorkCodexInstance,
+  resolveWorkComplexity,
+  WORK_CODEX_DRIVER,
+  type AppExperience,
+  type WorkComplexity,
+} from "~/workExperience";
 import { serverEnvironment } from "../../state/server";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
@@ -1524,6 +1539,11 @@ export interface ChatComposerProps {
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
+  appExperience: AppExperience;
+  activeProjectTitle: string | null;
+  activeProjectValue: string | null;
+  projectOptions: ReadonlyArray<{ ref: ScopedProjectRef; value: string; label: string }>;
+  projectPickerEnabled: boolean;
 
   // Session phase
   phase: SessionPhase;
@@ -1664,6 +1684,8 @@ export interface ChatComposerProps {
     model: string,
     options?: { focusComposer?: boolean },
   ) => void;
+  onWorkComplexitySelect: (complexity: WorkComplexity, instanceId: ProviderInstanceId) => void;
+  onProjectSelect: (projectRef: ScopedProjectRef | null) => void;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
@@ -1675,6 +1697,47 @@ export interface ChatComposerProps {
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
+}
+
+function ComposerProjectControl(props: {
+  readonly activeProjectTitle: string | null;
+  readonly activeProjectValue: string | null;
+  readonly enabled: boolean;
+  readonly options: ChatComposerProps["projectOptions"];
+  readonly onSelect: (projectRef: ScopedProjectRef | null) => void;
+}) {
+  const label = props.activeProjectTitle ?? "No project";
+  const trigger = (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost-muted"
+      className="max-w-44 shrink-0"
+      aria-label={`Project: ${label}`}
+    >
+      <FolderIcon className="size-4" />
+      <span className="truncate">{label}</span>
+      {props.enabled ? <ChevronDownIcon className="size-3" /> : null}
+    </Button>
+  );
+
+  if (!props.enabled) {
+    return (
+      <Tooltip>
+        <TooltipTrigger render={trigger} />
+        <TooltipPopup side="top">Project: {label}</TooltipPopup>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <ProjectPickerMenu
+      activeValue={props.activeProjectValue}
+      options={props.options}
+      trigger={trigger}
+      onSelect={props.onSelect}
+    />
+  );
 }
 
 // --------------------------------------------------------------------------
@@ -1703,6 +1766,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
+    appExperience,
     phase,
     canInterrupt,
     isConnecting,
@@ -1770,6 +1834,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    onWorkComplexitySelect,
     onOpenProviderSetup,
     getModelDisabledReason,
     toggleInteractionMode,
@@ -2079,6 +2144,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [providerStatuses, settings],
   );
   const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
+  const workCodexInstance = resolveWorkCodexInstance(
+    providerInstanceEntries,
+    selectedProviderByThreadId ??
+      activeThread?.runtime?.providerInstanceId ??
+      activeThreadModelSelection?.instanceId,
+  );
   const {
     selectedProviderEntry,
     requestedDriverKind,
@@ -2087,9 +2158,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   } = useMemo(
     () =>
       resolveComposerProviderSelection({
-        entries: providerInstanceEntries,
+        entries:
+          appExperience === "work" && lockedProvider === null
+            ? providerInstanceEntries.filter((entry) => entry.driverKind === WORK_CODEX_DRIVER)
+            : providerInstanceEntries,
         candidateInstanceIds: [
-          selectedProviderByThreadId,
+          appExperience === "work" && lockedProvider === null
+            ? workCodexInstance?.instanceId
+            : selectedProviderByThreadId,
           activeThread?.runtime?.providerInstanceId,
           activeThreadModelSelection?.instanceId,
           activeProjectDefaultModelSelection?.instanceId,
@@ -2103,6 +2179,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activeThread?.runtime?.providerInstanceId,
       activeThreadModelSelection?.instanceId,
       selectedProviderByThreadId,
+      appExperience,
+      workCodexInstance?.instanceId,
       lockedProvider,
       providerInstanceEntries,
     ],
@@ -2131,10 +2209,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedProvider: ProviderDriverKind =
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const supportedRuntimeModes = selectedProviderEntry?.snapshot.supportedRuntimeModes;
+  const availableRuntimeModeOptions = isSharedProjectEnvironment(environmentId)
+    ? runtimeModeOptions.filter((option) => option.mode !== "full-access")
+    : runtimeModeOptions;
   const compatibleRuntimeModeOptions =
     supportedRuntimeModes && supportedRuntimeModes.length > 0
-      ? runtimeModeOptions.filter((option) => supportedRuntimeModes.includes(option.mode))
-      : runtimeModeOptions;
+      ? availableRuntimeModeOptions.filter((option) => supportedRuntimeModes.includes(option.mode))
+      : availableRuntimeModeOptions;
   // Older threads can contain a mode their current provider no longer offers.
   // Display the provider's first supported mode, which is also its safe legacy
   // fallback, without mutating persisted state until the user makes a choice.
@@ -2315,6 +2396,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
   );
+  const workCodexInstanceId = workCodexInstance?.instanceId ?? DEFAULT_WORK_CODEX_INSTANCE_ID;
+  const resolvedWorkComplexity = resolveWorkComplexity(selectedModelSelection, workCodexInstanceId);
+  const selectedWorkComplexity = resolvedWorkComplexity ?? DEFAULT_WORK_COMPLEXITY;
+  useEffect(() => {
+    if (
+      appExperience === "work" &&
+      workCodexInstance !== undefined &&
+      (selectedInstanceId !== workCodexInstanceId || resolvedWorkComplexity === null)
+    ) {
+      onWorkComplexitySelect(DEFAULT_WORK_COMPLEXITY, workCodexInstanceId);
+    }
+  }, [
+    appExperience,
+    onWorkComplexitySelect,
+    resolvedWorkComplexity,
+    selectedInstanceId,
+    workCodexInstance,
+    workCodexInstanceId,
+  ]);
   const selectedModelForPicker = selectedModel;
   // Instance-keyed option list so the picker can show each configured
   // instance (built-in + custom) as a first-class sidebar entry. The
@@ -5397,6 +5497,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     </ComposerControl>
   ) : (
     <>
+      <ComposerProjectControl
+        activeProjectTitle={props.activeProjectTitle}
+        activeProjectValue={props.activeProjectValue}
+        enabled={props.projectPickerEnabled}
+        options={props.projectOptions}
+        onSelect={props.onProjectSelect}
+      />
       {composerControlsCollapsed &&
       restingControlsHost !== null &&
       restingControlsHaveLeadingContext ? (
@@ -5406,94 +5513,102 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           data-resting-controls-separator="true"
         />
       ) : null}
-      <ProviderModelPicker
-        compact={false}
-        isComposerOwned
-        disabled={providerCatalogPending || isSendBusy}
-        {...(routeKind === "draft" && supportsMultipleModels
-          ? {
-              ...(multipleModelSelections !== null
-                ? { selectedModels: multipleModelSelections }
-                : {}),
-              onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
-                const current = multipleModelSelections ?? [selectedModelSelection];
-                const matchesModel = (selection: ModelSelection) => {
-                  if (selection.instanceId !== instanceId) return false;
-                  const entry = providerInstanceEntries.find(
-                    (entry) => entry.instanceId === selection.instanceId,
-                  );
-                  const resolvedModel = resolveModelPickerSelectedModel({
-                    driverKind: entry?.driverKind,
-                    model: selection.model,
-                    options: modelOptionsByInstance.get(selection.instanceId) ?? [],
-                  });
-                  return (resolvedModel?.slug ?? selection.model) === model;
-                };
-                const exists = current.some(matchesModel);
-                const next = exists
-                  ? current.filter((selection) => !matchesModel(selection))
-                  : [...current, createModelSelection(instanceId, model)];
-                if (next.length > 1) {
-                  setMultipleModelSelections(next);
-                } else {
-                  setMultipleModelSelections(null);
-                  const remaining = next[0] ?? selectedModelSelection;
-                  onProviderModelSelect(remaining.instanceId, remaining.model, {
-                    focusComposer: false,
-                  });
-                }
-              },
-            }
-          : {})}
-        activeInstanceId={
-          providerCatalogPending
-            ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
-            : selectedInstanceId
-        }
-        model={
-          providerCatalogPending
-            ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
-            : selectedModelForPickerWithCustomFallback
-        }
-        lockedProvider={lockedProvider}
-        lockedContinuationGroupKey={lockedContinuationGroupKey}
-        instanceEntries={providerInstanceEntries}
-        keybindings={keybindings}
-        modelOptionsByInstance={modelOptionsByInstance}
-        size={composerControlsCollapsed ? "xs" : "sm"}
-        triggerClassName={
-          composerControlsCollapsed
-            ? cn(
-                "min-w-13 shrink text-xs!",
-                !showInlineRestingControls &&
-                  "@max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none",
-              )
-            : "-ms-2.5 min-w-13"
-        }
-        terminalOpen={terminalOpen}
-        open={isComposerModelPickerOpen}
-        instanceIndicatorBackground={
-          composerControlsCollapsed
-            ? "color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent)"
-            : "var(--contrast-input)"
-        }
-        {...(composerProviderState.modelPickerIconClassName || composerControlsCollapsed
-          ? {
-              activeProviderIconClassName: cn(
-                composerProviderState.modelPickerIconClassName,
-                composerControlsCollapsed &&
-                  "fill-muted-foreground/70! text-muted-foreground/70! [&_path]:fill-muted-foreground/70! [&_rect]:fill-muted-foreground/70! [&_[data-opencode-hole]]:fill-transparent!",
-              ),
-            }
-          : {})}
-        onOpenChange={setIsComposerModelPickerOpen}
-        getModelDisabledReason={getModelDisabledReason}
-        onInstanceModelChange={(instanceId, model) => {
-          setMultipleModelSelections(null);
-          onProviderModelSelect(instanceId, model);
-        }}
-        onOpenProviderSetup={onOpenProviderSetup}
-      />
+      {appExperience === "work" ? (
+        <WorkComplexityControl
+          value={selectedWorkComplexity}
+          onValueChange={(complexity) => onWorkComplexitySelect(complexity, workCodexInstanceId)}
+          disabled={isSendBusy || isConnecting}
+        />
+      ) : (
+        <ProviderModelPicker
+          compact={false}
+          isComposerOwned
+          disabled={providerCatalogPending || isSendBusy}
+          {...(routeKind === "draft" && supportsMultipleModels
+            ? {
+                ...(multipleModelSelections !== null
+                  ? { selectedModels: multipleModelSelections }
+                  : {}),
+                onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
+                  const current = multipleModelSelections ?? [selectedModelSelection];
+                  const matchesModel = (selection: ModelSelection) => {
+                    if (selection.instanceId !== instanceId) return false;
+                    const entry = providerInstanceEntries.find(
+                      (entry) => entry.instanceId === selection.instanceId,
+                    );
+                    const resolvedModel = resolveModelPickerSelectedModel({
+                      driverKind: entry?.driverKind,
+                      model: selection.model,
+                      options: modelOptionsByInstance.get(selection.instanceId) ?? [],
+                    });
+                    return (resolvedModel?.slug ?? selection.model) === model;
+                  };
+                  const exists = current.some(matchesModel);
+                  const next = exists
+                    ? current.filter((selection) => !matchesModel(selection))
+                    : [...current, createModelSelection(instanceId, model)];
+                  if (next.length > 1) {
+                    setMultipleModelSelections(next);
+                  } else {
+                    setMultipleModelSelections(null);
+                    const remaining = next[0] ?? selectedModelSelection;
+                    onProviderModelSelect(remaining.instanceId, remaining.model, {
+                      focusComposer: false,
+                    });
+                  }
+                },
+              }
+            : {})}
+          activeInstanceId={
+            providerCatalogPending
+              ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
+              : selectedInstanceId
+          }
+          model={
+            providerCatalogPending
+              ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
+              : selectedModelForPickerWithCustomFallback
+          }
+          lockedProvider={lockedProvider}
+          lockedContinuationGroupKey={lockedContinuationGroupKey}
+          instanceEntries={providerInstanceEntries}
+          keybindings={keybindings}
+          modelOptionsByInstance={modelOptionsByInstance}
+          size={composerControlsCollapsed ? "xs" : "sm"}
+          triggerClassName={
+            composerControlsCollapsed
+              ? cn(
+                  "min-w-13 shrink text-xs!",
+                  !showInlineRestingControls &&
+                    "@max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none",
+                )
+              : "-ms-2.5 min-w-13"
+          }
+          terminalOpen={terminalOpen}
+          open={isComposerModelPickerOpen}
+          instanceIndicatorBackground={
+            composerControlsCollapsed
+              ? "color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent)"
+              : "var(--contrast-input)"
+          }
+          {...(composerProviderState.modelPickerIconClassName || composerControlsCollapsed
+            ? {
+                activeProviderIconClassName: cn(
+                  composerProviderState.modelPickerIconClassName,
+                  composerControlsCollapsed &&
+                    "fill-muted-foreground/70! text-muted-foreground/70! [&_path]:fill-muted-foreground/70! [&_rect]:fill-muted-foreground/70! [&_[data-opencode-hole]]:fill-transparent!",
+                ),
+              }
+            : {})}
+          onOpenChange={setIsComposerModelPickerOpen}
+          getModelDisabledReason={getModelDisabledReason}
+          onInstanceModelChange={(instanceId, model) => {
+            setMultipleModelSelections(null);
+            onProviderModelSelect(instanceId, model);
+          }}
+          onOpenProviderSetup={onOpenProviderSetup}
+        />
+      )}
 
       <>
         {restingBlockDefs.map((def, index) => {
@@ -7389,7 +7504,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 ? "Enable a provider in Settings to send a message"
                                 : phase === "disconnected"
                                   ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                  : appExperience === "work"
+                                    ? "What would you like to get done?"
+                                    : "Ask anything, @tag files/folders, $use skills, or / for commands"
                     }
                     disabled={
                       isConnecting ||
@@ -7514,10 +7631,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
                     activeContextWindow={
-                      settings.contextWindowMeterEnabled ? activeContextWindow : null
+                      appExperience === "code" && settings.contextWindowMeterEnabled
+                        ? activeContextWindow
+                        : null
                     }
-                    reserveContextWindowMeter={reserveContextWindowMeter}
-                    activeThreadModelDisplayName={activeThreadModelDisplayName}
+                    reserveContextWindowMeter={
+                      appExperience === "code" && reserveContextWindowMeter
+                    }
+                    activeThreadModelDisplayName={
+                      appExperience === "work" ? null : activeThreadModelDisplayName
+                    }
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
                     canInterrupt={canInterrupt}

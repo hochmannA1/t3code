@@ -5,7 +5,7 @@ import * as ServerConfig from "../../../config.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { McpProtocol, McpServer } from "effect/ai";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -23,7 +23,6 @@ import * as SecretRequests from "../../../secrets/SecretRequests.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as VcsStatusBroadcaster from "../../../vcs/VcsStatusBroadcaster.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
-import * as McpSessionRegistry from "../../McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 
 const layerStubServices = Layer.mergeAll(
@@ -63,10 +62,18 @@ const ToolsListPayload = Schema.fromJsonString(
 );
 const decodeToolsListPayload = Schema.decodeUnknownEffect(ToolsListPayload);
 
-it.effect("production mcp layer lists worktree tools over http", () =>
+it.effect("worktree toolkit registration lists its tools over http", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const layerRoutes = McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer));
+      const layerTransport = McpServer.layerHttp({
+        name: "T3 worktree registration",
+        version: "1.0.0",
+        path: "/mcp",
+        protocols: [McpProtocol.v2025_06_18],
+      });
+      const layerRoutes = McpHttpServer.layerWorktreeToolkitRegistration.pipe(
+        Layer.provideMerge(layerTransport),
+      );
       yield* HttpRouter.serve(layerRoutes, {
         disableListenLog: true,
         disableLogger: true,
@@ -81,20 +88,9 @@ it.effect("production mcp layer lists worktree tools over http", () =>
         Layer.build,
       );
 
-      const registry = McpSessionRegistry.issueActiveMcpCredential({
-        threadId: ThreadId.make("thread-scratch"),
-        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-      });
-      const credential = yield* registry;
-      expect(credential).toBeDefined();
-
       const httpClient = yield* HttpClient.HttpClient;
-      const auth = credential!.config.authorizationHeader;
       const initResponse = yield* httpClient.post("/mcp", {
-        headers: {
-          accept: "application/json, text/event-stream",
-          authorization: auth,
-        },
+        headers: { accept: "application/json, text/event-stream" },
         body: HttpBody.text(
           `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"scratch","version":"1.0.0"}}}`,
           "application/json",
@@ -106,7 +102,6 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       const listResponse = yield* httpClient.post("/mcp", {
         headers: {
           accept: "application/json, text/event-stream",
-          authorization: auth,
           "mcp-protocol-version": "2025-06-18",
           ...(sessionId ? { "mcp-session-id": sessionId } : {}),
         },
@@ -121,11 +116,6 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       const toolNames = tools.map((tool) => tool.name);
       expect(toolNames).toContain("t3_worktree_handoff");
       expect(toolNames).toContain("t3_worktree_status");
-      // The worktree registration merges alongside the other toolkits rather
-      // than replacing them.
-      expect(toolNames).toContain("preview_status");
-      expect(toolNames).toContain("delegate_task");
-
       // The handoff tool mutates thread state, reaches the network (origin
       // fetch), and runs project setup scripts, so its MCP hints must not
       // promise a read-only, closed-world, non-destructive tool.

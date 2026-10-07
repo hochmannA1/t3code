@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createEnvironmentSessionAtoms } from "@t3tools/client-runtime/state/session";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { AuthSessionState, EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
@@ -11,6 +11,10 @@ export const environmentSession = createEnvironmentSessionAtoms(connectionAtomRu
 
 const EMPTY_PREPARED_CONNECTION_ATOM = Atom.make(Option.none()).pipe(
   Atom.withLabel("web-prepared-connection:empty"),
+);
+
+const EMPTY_SESSION_STATE_ATOM = Atom.make(AsyncResult.initial<AuthSessionState>()).pipe(
+  Atom.withLabel("web-environment-session-state:empty"),
 );
 
 export function usePreparedConnection(environmentId: EnvironmentId | null) {
@@ -32,8 +36,12 @@ export function readPreparedConnection(environmentId: EnvironmentId) {
  * environment's `/api/auth/session` endpoint. `data` stays populated across
  * SWR revalidations; `isPending` is only meaningful before the first resolve.
  */
-export function useEnvironmentSessionState(environmentId: EnvironmentId) {
-  const result = useAtomValue(environmentSession.sessionStateAtom(environmentId));
+export function useEnvironmentSessionState(environmentId: EnvironmentId | null) {
+  const result = useAtomValue(
+    environmentId === null
+      ? EMPTY_SESSION_STATE_ATOM
+      : environmentSession.sessionStateAtom(environmentId),
+  );
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
     hasError: result._tag === "Failure",

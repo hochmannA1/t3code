@@ -1,3 +1,4 @@
+import { isStandaloneProject } from "@t3tools/client-runtime/state/projects";
 import { useMemo } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
@@ -19,6 +20,8 @@ export function useSettingsProjectGroups() {
       settings,
       primaryEnvironmentId,
       resolveEnvironmentLabel: (id) => labels.get(id) ?? null,
-    }).sort((a, b) => a.displayName.localeCompare(b.displayName));
+    })
+      .filter((group) => group.memberProjects.some((project) => !isStandaloneProject(project)))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [environments, primaryEnvironmentId, projects, settings]);
 }
